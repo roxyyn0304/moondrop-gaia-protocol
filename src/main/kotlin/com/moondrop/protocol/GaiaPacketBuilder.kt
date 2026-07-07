@@ -11,94 +11,129 @@ import com.moondrop.protocol.model.GaiaPacket
  */
 object GaiaPacketBuilder {
 
-    // ========== 电池查询 ==========
-
-    /**
-     * 构造电池查询包 (Feature=0x00, Cmd=0x01)。
-     * 载荷: [0x01, 0x02] (查询左右耳)
-     */
-    fun batteryQuery(): GaiaPacket {
-        return GaiaPacket(
-            featureId = GaiaConstants.FEATURE_DEVICE_MANAGEMENT,
-            cmdId = GaiaConstants.CMD_BATTERY,
-            payload = byteArrayOf(0x01, 0x02)
-        )
-    }
-
-    // ========== 固件版本 ==========
-
-    /**
-     * 构造固件版本查询包 (Feature=0x00, Cmd=0x05)。
-     */
-    fun firmwareQuery(): GaiaPacket {
-        return GaiaPacket(
-            featureId = GaiaConstants.FEATURE_DEVICE_MANAGEMENT,
-            cmdId = GaiaConstants.CMD_FIRMWARE_VERSION
-        )
-    }
-
     // ========== ANC 控制 ==========
 
     /**
-     * 构造 ANC 模式查询包 (Feature=0x03, Cmd=0x03)。
+     * 构造 ANC 模式查询包。
      */
     fun ancQuery(): GaiaPacket {
-        return GaiaPacket(
-            featureId = GaiaConstants.FEATURE_ANC_V2,
-            cmdId = GaiaConstants.CMD_ANC_GET_MODE
-        )
+        return GaiaPacket(cmdId = GaiaConstants.CMD_ANC_QUERY)
     }
 
     /**
-     * 构造 ANC 模式设置包 (Feature=0x03, Cmd=0x04)。
+     * 构造 ANC 模式设置包。
      *
      * @param mode ANC 模式
      */
     fun ancSet(mode: AncMode): GaiaPacket {
         return GaiaPacket(
-            featureId = GaiaConstants.FEATURE_ANC_V2,
-            cmdId = GaiaConstants.CMD_ANC_SET_MODE,
+            cmdId = GaiaConstants.CMD_ANC_SET,
             payload = byteArrayOf(mode.value)
+        )
+    }
+
+    // ========== Gain 控制 ==========
+
+    /**
+     * 构造 Gain 查询包。
+     */
+    fun gainQuery(): GaiaPacket {
+        return GaiaPacket(cmdId = GaiaConstants.CMD_GAIN_QUERY)
+    }
+
+    /**
+     * 构造 Gain 设置包。
+     *
+     * @param level Gain 级别
+     */
+    fun gainSet(level: GainLevel): GaiaPacket {
+        return GaiaPacket(
+            cmdId = GaiaConstants.CMD_GAIN_SET,
+            payload = byteArrayOf(level.value)
+        )
+    }
+
+    // ========== 编解码器控制 ==========
+
+    /**
+     * 构造 LDAC 状态查询包。
+     */
+    fun ldacQuery(): GaiaPacket {
+        return GaiaPacket(cmdId = GaiaConstants.CMD_LDAC_QUERY)
+    }
+
+    /**
+     * 构造 LHDC/LC3 状态查询包。
+     */
+    fun lc3Query(): GaiaPacket {
+        return GaiaPacket(cmdId = GaiaConstants.CMD_LC3_QUERY)
+    }
+
+    /**
+     * 构造 LDAC 激活/停用包。
+     *
+     * @param centralMac 中央设备 MAC 地址 (启用时需要)
+     * @param enable true=激活, false=停用
+     */
+    fun ldacToggle(centralMac: String, enable: Boolean): GaiaPacket {
+        if (!enable) {
+            return GaiaPacket(
+                cmdId = GaiaConstants.CMD_LDAC_TOGGLE,
+                payload = byteArrayOf(0x00)
+            )
+        }
+
+        val cleanMac = centralMac.replace(":", "").replace("-", "")
+        if (cleanMac.length != 12) {
+            throw IllegalArgumentException("Invalid MAC address: $centralMac")
+        }
+
+        val macBytes = ByteArray(6)
+        for (i in 0 until 6) {
+            macBytes[i] = cleanMac.substring(i * 2, i * 2 + 2).toInt(16).toByte()
+        }
+
+        return GaiaPacket(
+            cmdId = GaiaConstants.CMD_LDAC_TOGGLE,
+            payload = macBytes
+        )
+    }
+
+    /**
+     * 构造 LC3/LE Audio 开关包。
+     *
+     * @param enable true=开启, false=关闭
+     */
+    fun lc3Toggle(enable: Boolean): GaiaPacket {
+        return GaiaPacket(
+            cmdId = GaiaConstants.CMD_LC3_TOGGLE,
+            payload = byteArrayOf(if (enable) 0x01 else 0x00)
         )
     }
 
     // ========== EQ 控制 ==========
 
     /**
-     * 构造 EQ 状态查询包 (Feature=0x07, Cmd=0x00)。
+     * 构造 EQ 状态查询包。
      */
     fun eqQuery(): GaiaPacket {
-        return GaiaPacket(
-            featureId = GaiaConstants.FEATURE_EQ_MUSIC,
-            cmdId = GaiaConstants.CMD_EQ_STATUS
-        )
+        return GaiaPacket(cmdId = GaiaConstants.CMD_EQ_QUERY)
     }
 
     /**
-     * 构造 EQ 预设列表查询包 (Feature=0x07, Cmd=0x01)。
-     */
-    fun eqPresetListQuery(): GaiaPacket {
-        return GaiaPacket(
-            featureId = GaiaConstants.FEATURE_EQ_MUSIC,
-            cmdId = GaiaConstants.CMD_EQ_PRESET_LIST
-        )
-    }
-
-    /**
-     * 构造 EQ 预设选择包 (Feature=0x07, Cmd=0x03)。
+     * 构造 EQ 预设选择包。
      *
-     * @param presetId 预设 ID (0=默认, 63=自定义)
+     * @param presetId 预设 ID
      */
     fun eqSelectPreset(presetId: Byte): GaiaPacket {
         return GaiaPacket(
-            featureId = GaiaConstants.FEATURE_EQ_MUSIC,
-            cmdId = GaiaConstants.CMD_EQ_SELECT_PRESET,
+            cmdId = GaiaConstants.CMD_EQ_SELECT,
             payload = byteArrayOf(presetId)
         )
     }
 
     /**
-     * 构造自定义 EQ 设置包 (Feature=0x07, Cmd=0x06)。
+     * 构造自定义 EQ 设置包。
      *
      * @param preGain 前置增益 (dB)
      * @param bands 频段配置列表
@@ -142,101 +177,8 @@ object GaiaPacketBuilder {
         }
 
         return GaiaPacket(
-            featureId = GaiaConstants.FEATURE_EQ_MUSIC,
-            cmdId = GaiaConstants.CMD_EQ_SET_USER_CONFIG,
+            cmdId = GaiaConstants.CMD_EQ_SELECT,
             payload = payload
-        )
-    }
-
-    // ========== Gain 控制 ==========
-
-    /**
-     * 构造 Gain 查询包 (Feature=0x1E, Cmd=0x01)。
-     */
-    fun gainQuery(): GaiaPacket {
-        return GaiaPacket(
-            featureId = GaiaConstants.FEATURE_GAIN,
-            cmdId = GaiaConstants.CMD_GAIN_GET
-        )
-    }
-
-    /**
-     * 构造 Gain 设置包 (Feature=0x1E, Cmd=0x02)。
-     *
-     * @param level Gain 级别
-     */
-    fun gainSet(level: GainLevel): GaiaPacket {
-        return GaiaPacket(
-            featureId = GaiaConstants.FEATURE_GAIN,
-            cmdId = GaiaConstants.CMD_GAIN_SET,
-            payload = byteArrayOf(level.value)
-        )
-    }
-
-    // ========== 编解码器控制 ==========
-
-    /**
-     * 构造 LDAC 状态查询包 (Feature=0x0A, Cmd=0x02)。
-     */
-    fun ldacQuery(): GaiaPacket {
-        return GaiaPacket(
-            featureId = GaiaConstants.FEATURE_CODEC,
-            cmdId = GaiaConstants.CMD_CODEC_LDAC_STATUS
-        )
-    }
-
-    /**
-     * 构造 LHDC/LC3 状态查询包 (Feature=0x0A, Cmd=0x03)。
-     */
-    fun lc3Query(): GaiaPacket {
-        return GaiaPacket(
-            featureId = GaiaConstants.FEATURE_CODEC,
-            cmdId = GaiaConstants.CMD_CODEC_LHDC_STATUS
-        )
-    }
-
-    /**
-     * 构造 LDAC 激活/停用包 (Feature=0x0A, Cmd=0x02)。
-     *
-     * @param centralMac 中央设备 MAC 地址 (启用时需要)
-     * @param enable true=激活, false=停用
-     */
-    fun ldacToggle(centralMac: String, enable: Boolean): GaiaPacket {
-        if (!enable) {
-            return GaiaPacket(
-                featureId = GaiaConstants.FEATURE_CODEC,
-                cmdId = GaiaConstants.CMD_CODEC_LDAC_TOGGLE,
-                payload = byteArrayOf(0x00)
-            )
-        }
-
-        val cleanMac = centralMac.replace(":", "").replace("-", "")
-        if (cleanMac.length != 12) {
-            throw IllegalArgumentException("Invalid MAC address: $centralMac")
-        }
-
-        val macBytes = ByteArray(6)
-        for (i in 0 until 6) {
-            macBytes[i] = cleanMac.substring(i * 2, i * 2 + 2).toInt(16).toByte()
-        }
-
-        return GaiaPacket(
-            featureId = GaiaConstants.FEATURE_CODEC,
-            cmdId = GaiaConstants.CMD_CODEC_LDAC_TOGGLE,
-            payload = macBytes
-        )
-    }
-
-    /**
-     * 构造 LC3/LE Audio 开关包 (Feature=0x0A, Cmd=0x04)。
-     *
-     * @param enable true=开启, false=关闭
-     */
-    fun lc3Toggle(enable: Boolean): GaiaPacket {
-        return GaiaPacket(
-            featureId = GaiaConstants.FEATURE_CODEC,
-            cmdId = GaiaConstants.CMD_CODEC_LC3_TOGGLE,
-            payload = byteArrayOf(if (enable) 0x01 else 0x00)
         )
     }
 }

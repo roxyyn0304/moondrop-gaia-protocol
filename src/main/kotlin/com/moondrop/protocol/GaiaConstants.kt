@@ -6,15 +6,20 @@ package com.moondrop.protocol
  * 基于 Qualcomm GAIA (Generic Audio Interface Architecture) V3 协议，
  * 通过 RFCOMM Channel 16 通信，Vendor ID = 29 (0x001D)。
  *
+ * cmdId 是 2 字节值，编码了 Feature ID + Packet Type + Command ID：
+ * - Bits 15-9: Feature ID (7 bits)
+ * - Bits 8-7: Packet Type (2 bits, 0=COMMAND, 2=RESPONSE)
+ * - Bits 6-0: Command ID (7 bits)
+ *
  * 参考来源:
- * - SpaceTravel-Protocol (GitHub) — Space Travel 抓包数据
- * - moondrop-spp-controller (GitHub) — Android SPP 控制实现
+ * - SpaceTravel-Protocol (GitHub)
+ * - moondrop-spp-controller (GitHub) — 实际工作的 cmdId 值
  * - MOONDROP Link APK 反编译
  */
 object GaiaConstants {
 
     // ========== 传输层 ==========
-    /** 标准 SPP UUID（GAIA V3 使用 RFCOMM Channel 16） */
+    /** 标准 SPP UUID */
     val SPP_UUID: java.util.UUID = java.util.UUID.fromString("00001101-0000-1000-8000-00805f9b34fb")
 
     /** GAIA Vendor ID = 29 (0x001D) */
@@ -24,99 +29,77 @@ object GaiaConstants {
     const val TX_HEADER_0: Byte = 0xFF.toByte()
     const val TX_HEADER_1: Byte = 0x04
 
-    // ========== Feature ID ==========
-    /** 设备管理 (电池, 配置查询) */
-    const val FEATURE_DEVICE_MANAGEMENT: Byte = 0x00
+    // ========== cmdId 常量 (2 字节，Feature + Command 编码) ==========
+    // 从 moondrop-spp-controller 逆向得到的实际值
 
-    /** 基础功能 (固件版本, 状态, 设备状态) */
-    const val FEATURE_BASIC_FUNCTION: Byte = 0x01
+    // --- ANC (Feature=0x10) ---
+    /** ANC 状态查询 (TX) */
+    const val CMD_ANC_QUERY: Int = 0x1003
+    /** ANC 状态响应 (RX) */
+    const val CMD_ANC_RESPONSE: Int = 0x1103
+    /** ANC 模式设置 (TX) */
+    const val CMD_ANC_SET: Int = 0x1004
 
-    /** ANC V2 (降噪控制) */
-    const val FEATURE_ANC_V2: Byte = 0x03
+    // --- Gain (Feature=0x1E) ---
+    /** Gain 查询 (TX) */
+    const val CMD_GAIN_QUERY: Int = 0x1E01
+    /** Gain 响应 (RX) */
+    const val CMD_GAIN_RESPONSE: Int = 0x1F01
+    /** Gain 设置 (TX) */
+    const val CMD_GAIN_SET: Int = 0x1E02
 
-    /** EQ/音乐处理 */
-    const val FEATURE_EQ_MUSIC: Byte = 0x07
+    // --- 编解码器 (Feature=0x20) ---
+    /** LDAC 状态查询 (TX) */
+    const val CMD_LDAC_QUERY: Int = 0x2002
+    /** LDAC 状态响应 (RX) */
+    const val CMD_LDAC_RESPONSE: Int = 0x2102
+    /** LDAC 激活/停用 (TX) */
+    const val CMD_LDAC_TOGGLE: Int = 0x2A02
 
-    /** 编解码器 (LDAC/LHDC/LC3) */
-    const val FEATURE_CODEC: Byte = 0x0A
+    /** LC3 状态查询 (TX) */
+    const val CMD_LC3_QUERY: Int = 0x2001
+    /** LC3 状态响应 (RX) */
+    const val CMD_LC3_RESPONSE: Int = 0x2101
+    /** LC3/LE Audio 开关 (TX) */
+    const val CMD_LC3_TOGGLE: Int = 0x2004
 
-    /** 状态查询 */
-    const val FEATURE_STATUS_QUERY: Byte = 0x0B
+    // --- EQ (Feature=0x0B) ---
+    /** EQ 状态查询 (TX) */
+    const val CMD_EQ_QUERY: Int = 0x0B02
+    /** EQ 状态响应 (RX) */
+    const val CMD_EQ_RESPONSE: Int = 0x0B02
+    /** EQ 预设选择 (TX) */
+    const val CMD_EQ_SELECT: Int = 0x0B03
+    /** EQ 面板/详情响应 (RX) */
+    const val CMD_EQ_DETAIL_RESPONSE: Int = 0x0B05
 
-    /** Gain 控制 */
-    const val FEATURE_GAIN: Byte = 0x1E
+    // --- 设备信息 ---
+    /** 固件版本响应 (RX) */
+    const val CMD_FIRMWARE_RESPONSE: Int = 0x0105
+    /** 序列号响应 (RX) */
+    const val CMD_SERIAL_RESPONSE: Int = 0x0302
+    /** 心跳/通用 ACK (RX) */
+    const val CMD_HEARTBEAT: Int = 0x0107
 
-    // ========== Command ID — Feature 0x00 (设备管理) ==========
-    /** 查询电池 */
-    const val CMD_BATTERY: Byte = 0x01
+    // ========== 响应位掩码 ==========
+    /** 响应位 (bit 8) */
+    const val RESPONSE_BIT: Int = 0x0100
 
-    /** 查询配置 */
-    const val CMD_CONFIG_QUERY: Byte = 0x0C
+    /**
+     * 从 TX cmdId 计算对应的 RX 响应 cmdId。
+     * 响应 = TX cmdId | RESPONSE_BIT
+     */
+    fun toResponseCmdId(txCmdId: Int): Int = txCmdId or RESPONSE_BIT
 
-    /** 查询状态#19 */
-    const val CMD_STATUS_QUERY_19: Byte = 0x13
+    /**
+     * 检查 cmdId 是否为响应包。
+     */
+    fun isResponse(cmdId: Int): Boolean = (cmdId and RESPONSE_BIT) != 0
 
-    /** 查询状态#20 */
-    const val CMD_STATUS_QUERY_20: Byte = 0x14
-
-    /** 查询状态#21 */
-    const val CMD_STATUS_QUERY_21: Byte = 0x15
-
-    // ========== Command ID — Feature 0x01 (基础功能) ==========
-    /** 固件版本 */
-    const val CMD_FIRMWARE_VERSION: Byte = 0x05
-
-    /** 状态查询 */
-    const val CMD_STATUS_REQUEST: Byte = 0x07
-
-    /** 配置响应 */
-    const val CMD_CONFIG_RESPONSE: Byte = 0x0C
-
-    /** 设备状态 */
-    const val CMD_DEVICE_STATUS: Byte = 0x0D
-
-    // ========== Command ID — Feature 0x03 (ANC V2) ==========
-    /** 获取 ANC 模式 */
-    const val CMD_ANC_GET_MODE: Byte = 0x03
-
-    /** 设置 ANC 模式 */
-    const val CMD_ANC_SET_MODE: Byte = 0x04
-
-    // ========== Command ID — Feature 0x07 (EQ) ==========
-    /** EQ 状态 */
-    const val CMD_EQ_STATUS: Byte = 0x00
-
-    /** 预设列表 */
-    const val CMD_EQ_PRESET_LIST: Byte = 0x01
-
-    /** 选择预设 */
-    const val CMD_EQ_SELECT_PRESET: Byte = 0x03
-
-    /** 获取用户配置 */
-    const val CMD_EQ_GET_USER_CONFIG: Byte = 0x05
-
-    /** 设置用户配置 */
-    const val CMD_EQ_SET_USER_CONFIG: Byte = 0x06
-
-    // ========== Command ID — Feature 0x0A (编解码器) ==========
-    /** LDAC 状态查询 */
-    const val CMD_CODEC_LDAC_STATUS: Byte = 0x02
-
-    /** LHDC 状态查询 */
-    const val CMD_CODEC_LHDC_STATUS: Byte = 0x03
-
-    /** LDAC 激活/停用 */
-    const val CMD_CODEC_LDAC_TOGGLE: Byte = 0x02
-
-    /** LC3/LE Audio 开关 */
-    const val CMD_CODEC_LC3_TOGGLE: Byte = 0x04
-
-    // ========== Command ID — Feature 0x1E (Gain) ==========
-    /** 获取增益 */
-    const val CMD_GAIN_GET: Byte = 0x01
-
-    /** 设置增益 */
-    const val CMD_GAIN_SET: Byte = 0x02
+    /**
+     * 获取 cmdId 的基础值（去掉响应位）。
+     */
+    fun baseCmdId(cmdId: Int): Int = cmdId and RESPONSE_BIT.inv()
 
     // ========== 设备名称 ==========
     /** 支持的品牌关键词 */

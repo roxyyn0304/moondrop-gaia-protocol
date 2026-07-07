@@ -12,36 +12,6 @@ import com.moondrop.protocol.model.GaiaPacket
 object ResponseParser {
 
     /**
-     * 解析电池响应。
-     *
-     * @param packet 响应包
-     * @return Pair(左耳电量%, 右耳电量%)，解析失败返回 null
-     */
-    fun parseBattery(packet: GaiaPacket): Pair<Int, Int>? {
-        if (packet.featureId != GaiaConstants.FEATURE_DEVICE_MANAGEMENT) return null
-        if (packet.payload.size < 2) return null
-
-        val left = packet.payload[0].toInt() and 0xFF
-        val right = packet.payload[1].toInt() and 0xFF
-        return Pair(left, right)
-    }
-
-    /**
-     * 解析固件版本响应。
-     *
-     * @param packet 响应包
-     * @return 固件版本字符串，解析失败返回 null
-     */
-    fun parseFirmwareVersion(packet: GaiaPacket): String? {
-        if (packet.payload.isEmpty()) return null
-        return try {
-            String(packet.payload, Charsets.US_ASCII).trim()
-        } catch (e: Exception) {
-            null
-        }
-    }
-
-    /**
      * 解析 ANC 模式响应。
      *
      * @param packet 响应包
@@ -53,18 +23,7 @@ object ResponseParser {
     }
 
     /**
-     * 解析 EQ 状态响应。
-     *
-     * @param packet 响应包
-     * @return 当前选中的预设 ID，解析失败返回 -1
-     */
-    fun parseEqStatus(packet: GaiaPacket): Int {
-        if (packet.payload.isEmpty()) return -1
-        return packet.payload[0].toInt() and 0xFF
-    }
-
-    /**
-     * 解析 Gain 状态响应。
+     * 解析 Gain 级别响应。
      *
      * @param packet 响应包
      * @return Gain 级别，解析失败返回 MEDIUM
@@ -97,6 +56,21 @@ object ResponseParser {
     }
 
     /**
+     * 解析固件版本响应。
+     *
+     * @param packet 响应包
+     * @return 固件版本字符串，解析失败返回 null
+     */
+    fun parseFirmwareVersion(packet: GaiaPacket): String? {
+        if (packet.payload.isEmpty()) return null
+        return try {
+            String(packet.payload, Charsets.US_ASCII).trim()
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /**
      * 解析序列号响应。
      *
      * @param packet 响应包
@@ -109,6 +83,17 @@ object ResponseParser {
         } catch (e: Exception) {
             null
         }
+    }
+
+    /**
+     * 解析 EQ 预设选择响应。
+     *
+     * @param packet 响应包
+     * @return 当前选中的预设 ID，解析失败返回 -1
+     */
+    fun parseEqPreset(packet: GaiaPacket): Int {
+        if (packet.payload.isEmpty()) return -1
+        return packet.payload[0].toInt() and 0xFF
     }
 
     /**
