@@ -5,14 +5,14 @@ from urllib.parse import urlparse, parse_qs
 import serial
 
 VENDOR_ID = 0x001D
-FEATURE_NAMES = {0x00:"设备管理",0x01:"基础功能",0x03:"序列号",0x05:"固件版本",0x07:"EQ",0x0A:"自定义EQ",0x0C:"配置",0x0D:"设备状态",0x14:"序列号",0x15:"设备ID",0x1E:"增益",0x20:"编解码器",0x40:"ANC"}
-ANC_MODES = {0x00:"关闭",0x02:"通透",0x04:"降噪",0x08:"自适应",0x10:"抗风噪"}
+FEATURE_NAMES = {0x00:"基础查询",0x1E:"增益",0x20:"编解码器",0x40:"ANC",0x1A:"设备管理"}
+ANC_MODES = {0x00:"关闭",0x01:"通透",0x02:"降噪",0x08:"自适应",0x10:"抗风噪"}
 
 def feature_name(f):
     return FEATURE_NAMES.get(f&0xFE, "") or f"0x{f:02X}"
 
 def build_tx(fid, cid, payload=b"", seq=0):
-    body_len = 1 + 1 + len(payload)  # feature + cmd + payload
+    body_len = len(payload)  # payload size only (matches btsnoop capture)
     pkt = bytearray(8 + len(payload))
     pkt[0]=0xFF; pkt[1]=0x04; pkt[2]=((body_len>>8)&0xFF); pkt[3]=(body_len&0xFF)
     pkt[4]=seq; pkt[5]=VENDOR_ID&0xFF; pkt[6]=fid&0xFF; pkt[7]=cid&0xFF
@@ -273,8 +273,8 @@ async function send(f,c,p){
       let h=logRow('TX',j.tx?j.tx.raw:'',decodeInfo(j.tx));
       if(j.decoded){
         h+=logRow('RX',j.rx_raw,decodeInfo(j.decoded));
-        if((j.decoded.feature&0xFE)===0x40&&(j.decoded.cmd===3||j.decoded.cmd===4)){updateAncUI(j.decoded.payload[0])}
-        if((j.decoded.feature&0xFE)===0x1E&&(j.decoded.cmd===1||j.decoded.cmd===2)){updateGainUI(j.decoded.payload[0])}
+        if(j.decoded.payload.length>0&&(j.decoded.feature&0xFE)===0x40&&(j.decoded.cmd===3||j.decoded.cmd===4)){updateAncUI(j.decoded.payload[0])}
+        if(j.decoded.payload.length>0&&(j.decoded.feature&0xFE)===0x1E&&(j.decoded.cmd===1||j.decoded.cmd===2)){updateGainUI(j.decoded.payload[0])}
       }else if(j.rx_raw){h+=logRow('RX',j.rx_raw,'')}
       else{h+=`<div class="log-row err"><span class="log-dir">--</span><span class="log-msg">设备无响应</span></div>`}
       addLog(h);st.className='dot ok';stText.textContent='已连接';
@@ -330,7 +330,11 @@ class Handler(BaseHTTPRequestHandler):
             device_online=r.get("decoded") is not None
             self._json({"online":device_online,"result":r})
         elif p.path=="/api/presets":self._json(PRESETS)
-        elif p.path=="/api/send":self._json(send_cmd(int(q.get("feature",["0"])[0]),int(q.get("cmd",["0"])[0]),q.get("payload",[""])[0]))
+        elif p.path=="/api/send":
+            try:
+                f=int(q.get("feature",["0"])[0]); c=int(q.get("cmd",["0"])[0])
+                self._json(send_cmd(f,c,q.get("payload",[""])[0]))
+            except (ValueError,TypeError):self._json({"error":"参数格式错误"})
         else:self.send_error(404)
     def _json(self,d):
         body=json.dumps(d,ensure_ascii=False).encode()
@@ -369,7 +373,7 @@ def main():
         print("  未找到 MOONDROP 蓝牙串口");print("  用法: python webtest.py [--port COMx] [--web-port 8080]");return
     print(f"  串口: {port}")
     try:ser=serial.Serial(port,115200,timeout=0.5,write_timeout=2);print(f"  {port} OK")
-    except Exception as e:print(f"  {port} failed: {e}")
+    except Exception as e:print(f"  {port} failed: {e}");return
     server=HTTPServer(("127.0.0.1",web_port),Handler)
     print(f"  http://127.0.0.1:{web_port}\n")
     try:server.serve_forever()

@@ -21,7 +21,6 @@ package com.moondrop.protocol
 object GaiaConstants {
 
     // ========== 传输层 ==========
-    val SPP_UUID: java.util.UUID = java.util.UUID.fromString("00001101-0000-1000-8000-00805f9b34fb")
     const val VENDOR_ID: Int = 0x001D
     const val HEADER_0: Byte = 0xFF.toByte()
     const val HEADER_1: Byte = 0x04
@@ -85,11 +84,4 @@ object GaiaConstants {
     const val RESPONSE_BIT: Int = 0x01
     fun isResponse(featureId: Int): Boolean = (featureId and RESPONSE_BIT) != 0
     fun baseFeatureId(featureId: Int): Int = featureId and RESPONSE_BIT.inv()
-
-    // ========== 设备名称 ==========
-    val SUPPORTED_BRANDS = listOf("MOONDROP")
-    fun isMoondropDevice(deviceName: String?): Boolean {
-        if (deviceName.isNullOrBlank()) return false
-        return SUPPORTED_BRANDS.any { deviceName.contains(it, ignoreCase = true) }
-    }
 }

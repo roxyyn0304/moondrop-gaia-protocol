@@ -60,10 +60,6 @@ object GaiaCodec {
         return (data[5].toInt() and 0xFF) == GaiaConstants.VENDOR_ID
     }
 
-    fun isError(packet: GaiaPacket): Boolean {
-        return packet.payload.isNotEmpty() && packet.payload[0] == 0xFE.toByte()
-    }
-
     // ========== 流式解码 ==========
 
     class StreamDecoder {

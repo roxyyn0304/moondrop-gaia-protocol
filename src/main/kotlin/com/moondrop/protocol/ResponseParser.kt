@@ -45,6 +45,7 @@ object ResponseParser {
 
     /** 解析 ANC 可用模式 (Feature=0x41, Cmd=0x29) */
     fun parseAncAvailableModes(packet: GaiaPacket): List<Int> {
+        if (GaiaConstants.baseFeatureId(packet.featureId) != GaiaConstants.FEATURE_ANC) return emptyList()
         if (packet.commandId != GaiaConstants.CMD_ANC_AVAILABLE) return emptyList()
         if (packet.payload.isEmpty()) return emptyList()
         return packet.payload.map { it.toInt() and 0xFF }

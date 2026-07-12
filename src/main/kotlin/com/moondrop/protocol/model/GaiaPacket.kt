@@ -22,9 +22,6 @@ data class GaiaPacket(
     /** 事务序号 */
     val sequence: Byte = 0x00
 ) {
-    /** 载荷长度 */
-    val payloadLength: Int get() = payload.size
-
     /** 获取 cmdId (featureId shl 8 | commandId) */
     val cmdId: Int get() = (featureId shl 8) or commandId
 

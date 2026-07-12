@@ -110,11 +110,6 @@ class GaiaCodecTest {
     }
 
     @Test
-    fun `isMoondropDevice`() {
-        assertTrue(GaiaConstants.isMoondropDevice("MOONDROP Space Travel"))
-    }
-
-    @Test
     fun `packet cmdId`() {
         assertEquals(0x0005, GaiaPacket(0x00, 0x05).cmdId)
     }
