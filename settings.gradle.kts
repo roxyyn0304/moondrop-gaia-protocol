@@ -1,1 +1,1 @@
-rootProject.name = "moondrop-gaia-protocol"
+rootProject.name = "moondrop-pudding-protocol"

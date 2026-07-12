@@ -1,9 +1,8 @@
 plugins {
     alias(libs.plugins.kotlin.jvm)
-    alias(libs.plugins.kotlin.serialization)
 }
 
-group = "com.moondrop.protocol"
+group = "com.moondrop.pudding"
 version = "0.1.0"
 
 repositories {
@@ -11,7 +10,6 @@ repositories {
 }
 
 dependencies {
-    implementation(libs.kotlinx.serialization.json)
     testImplementation(kotlin("test"))
 }
 

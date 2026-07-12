@@ -9,6 +9,7 @@ build/
 *.ipr
 *.iws
 .vscode/
+*.kotlin/
 
 # OS
 .DS_Store
@@ -19,6 +20,53 @@ Thumbs.db
 *.jar
 *.war
 *.ear
+!gradle/wrapper/gradle-wrapper.jar
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
 
 # Logs
 *.log
+
+# APK (太大不入库)
+android-release.apk
+
+# Frida (临时调试)
+frida_server/
+start_frida.sh
+
+# 探测脚本 (逆向过程产物)
+tools/probe*.py
+tools/quick_*.py
+tools/check_*.py
+tools/test_*.py
+tools/run_*.py
+tools/find_*.py
+tools/list_*.py
+tools/monitor_*.py
+tools/analyze_*.py
+tools/parse_*.py
+tools/search_*.py
+tools/enable_*.sh
+tools/decompile_*.py
+tools/ble_*.py
+tools/jieli_*.py
+tools/anc_*.py
+tools/oppo_*.py
+tools/frida_*.js
+tools/try_*.py
+tools/ble_connect.py
+tools/ble_discover.py
+tools/ble_scan.py
+tools/bluetooth_test.py
+
+# 反编译产物
+tools/decompiled/
+tools/decompile/
+
+# 文档 (临时)
+docs/BLE_GAIA_发现.md
+docs/ANC_关键类名.md

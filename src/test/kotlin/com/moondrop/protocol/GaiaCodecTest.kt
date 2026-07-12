@@ -2,7 +2,7 @@ package com.moondrop.protocol
 
 import com.moondrop.protocol.codec.GaiaCodec
 import com.moondrop.protocol.model.AncMode
-import com.moondrop.protocol.model.GainLevel
+import com.moondrop.protocol.model.GaiaPacket
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -11,157 +11,167 @@ import kotlin.test.assertTrue
 
 class GaiaCodecTest {
 
-    @Test
-    fun `encode ANC query packet`() {
-        val packet = GaiaPacketBuilder.ancQuery()
-        val encoded = GaiaCodec.encode(packet)
+    private fun hex(vararg bytes: Int): ByteArray = ByteArray(bytes.size) { bytes[it].toByte() }
 
-        assertEquals(0xFF.toByte(), encoded[0])
-        assertEquals(0x04, encoded[1])
-        // cmdId = 0x1003, little-endian: 0x03, 0x10
-        assertEquals(0x03, encoded[7])
-        assertEquals(0x10, encoded[8])
+    // ========== 编码 ==========
+
+    @Test
+    fun `encode firmware version query`() {
+        val encoded = GaiaCodec.encode(GaiaPacketBuilder.firmwareVersionQuery())
+        assertEquals(0xFF, encoded[0].toInt() and 0xFF)
+        assertEquals(0x04, encoded[1].toInt() and 0xFF)
+        assertEquals(0x05, encoded[6].toInt() and 0xFF) // FEATURE_FIRMWARE
+        assertEquals(0x00, encoded[7].toInt() and 0xFF) // CMD_FW_VERSION
     }
 
     @Test
-    fun `encode ANC set packet`() {
-        val packet = GaiaPacketBuilder.ancSet(AncMode.ANC)
-        val encoded = GaiaCodec.encode(packet)
-
-        // cmdId = 0x1004, little-endian: 0x04, 0x10
-        assertEquals(0x04, encoded[7])
-        assertEquals(0x10, encoded[8])
-        // payload: ANC mode = 0x02
-        assertEquals(0x02, encoded[9])
+    fun `encode ANC query`() {
+        val encoded = GaiaCodec.encode(GaiaPacketBuilder.ancQuery())
+        assertEquals(0x40, encoded[6].toInt() and 0xFF) // FEATURE_ANC
+        assertEquals(0x03, encoded[7].toInt() and 0xFF) // CMD_ANC_QUERY
     }
 
     @Test
-    fun `decode ANC response`() {
-        // RX format: [00] [cmdSpaceLo] [cmdSpaceHi] [cmdIdLo] [cmdIdHi] [payload...]
-        val rxData = byteArrayOf(
-            0x00,                   // fixed
-            0x1D, 0x00,            // cmdSpace = Vendor ID (0x001D)
-            0x03, 0x11,            // cmdId = 0x1103 (ANC response)
-            0x02                    // payload: ANC mode = 2 (ANC)
-        )
-
-        val packet = GaiaCodec.decode(rxData)
-        assertNotNull(packet)
-        assertEquals(GaiaConstants.CMD_ANC_RESPONSE, packet.cmdId)
-        assertTrue(packet.isResponse)
-        assertEquals(1, packet.payload.size)
-        assertEquals(AncMode.ANC, ResponseParser.parseAncMode(packet))
+    fun `encode ANC set`() {
+        val encoded = GaiaCodec.encode(GaiaPacketBuilder.ancSet(AncMode.NOISE_CANCEL))
+        assertEquals(0x40, encoded[6].toInt() and 0xFF)
+        assertEquals(0x04, encoded[7].toInt() and 0xFF)
+        assertEquals(0x04, encoded[8].toInt() and 0xFF) // ANC mode = 0x04
     }
 
     @Test
-    fun `decode Gain response`() {
-        val rxData = byteArrayOf(
-            0x00,
-            0x1D, 0x00,            // Vendor ID
-            0x01, 0x1F,            // cmdId = 0x1F01 (Gain response)
-            0x01                    // gain level = medium
-        )
+    fun `encode len is payload size`() {
+        val encoded = GaiaCodec.encode(GaiaPacket(0x40, 0x04, byteArrayOf(0x01, 0x02, 0x03)))
+        assertEquals(0, encoded[2].toInt() and 0xFF, "len high byte")
+        assertEquals(3, encoded[3].toInt() and 0xFF, "len low byte")
+        assertEquals(11, encoded.size, "total size = 8 + 3")
+    }
 
-        val packet = GaiaCodec.decode(rxData)
-        assertNotNull(packet)
-        assertEquals(GaiaConstants.CMD_GAIN_RESPONSE, packet.cmdId)
-        assertEquals(GainLevel.MEDIUM, ResponseParser.parseGainLevel(packet))
+    // ========== 解码 ==========
+
+    @Test
+    fun `decode firmware version`() {
+        val rx = hex(0xFF, 0x04, 0x00, 0x05, 0x00, 0x1D, 0x05, 0x00) +
+                "3.5.2".toByteArray(Charsets.US_ASCII)
+        val p = GaiaCodec.decode(rx)
+        assertNotNull(p)
+        assertEquals(0x05, p.featureId)
+        assertEquals("3.5.2", ResponseParser.parseFirmwareVersion(p))
     }
 
     @Test
-    fun `decode firmware version response`() {
-        val version = "1.0.0"
-        val rxData = byteArrayOf(
-            0x00,
-            0x1D, 0x00,            // Vendor ID
-            0x05, 0x01,            // cmdId = 0x0105 (firmware)
-        ) + version.toByteArray(Charsets.US_ASCII)
-
-        val packet = GaiaCodec.decode(rxData)
-        assertNotNull(packet)
-        assertEquals(GaiaConstants.CMD_FIRMWARE_RESPONSE, packet.cmdId)
-
-        val fwVersion = ResponseParser.parseFirmwareVersion(packet)
-        assertEquals("1.0.0", fwVersion)
+    fun `decode ANC status`() {
+        val rx = hex(0xFF, 0x04, 0x00, 0x01, 0x00, 0x1D, 0x41, 0x03, 0x02)
+        val p = GaiaCodec.decode(rx)
+        assertNotNull(p)
+        assertEquals(0x41, p.featureId) // 0x40 | 0x01 response bit
+        assertEquals(AncMode.TRANSPARENCY, ResponseParser.parseAncMode(p))
     }
 
     @Test
-    fun `decode LDAC status response`() {
-        val rxData = byteArrayOf(
-            0x00,
-            0x1D, 0x00,            // Vendor ID
-            0x02, 0x21,            // cmdId = 0x2102 (LDAC response)
-            0x01                    // enabled
-        )
-
-        val packet = GaiaCodec.decode(rxData)
-        assertNotNull(packet)
-        assertEquals(GaiaConstants.CMD_LDAC_RESPONSE, packet.cmdId)
-        assertEquals(true, ResponseParser.parseLdacStatus(packet))
+    fun `decode ANC off`() {
+        val rx = hex(0xFF, 0x04, 0x00, 0x01, 0x00, 0x1D, 0x41, 0x03, 0x00)
+        val p = GaiaCodec.decode(rx)
+        assertNotNull(p)
+        assertEquals(AncMode.OFF, ResponseParser.parseAncMode(p))
     }
 
     @Test
-    fun `decode LC3 status response`() {
-        val rxData = byteArrayOf(
-            0x00,
-            0x1D, 0x00,            // Vendor ID
-            0x01, 0x21,            // cmdId = 0x2101 (LC3 response)
-            0x00                    // disabled
-        )
-
-        val packet = GaiaCodec.decode(rxData)
-        assertNotNull(packet)
-        assertEquals(GaiaConstants.CMD_LC3_RESPONSE, packet.cmdId)
-        assertEquals(false, ResponseParser.parseLc3Status(packet))
+    fun `decode ANC noise cancel`() {
+        val rx = hex(0xFF, 0x04, 0x00, 0x01, 0x00, 0x1D, 0x41, 0x03, 0x04)
+        val p = GaiaCodec.decode(rx)
+        assertNotNull(p)
+        assertEquals(AncMode.NOISE_CANCEL, ResponseParser.parseAncMode(p))
     }
 
     @Test
-    fun `decode invalid vendor ID returns null`() {
-        val rxData = byteArrayOf(
-            0x00,
-            0x01, 0x00,            // wrong vendor ID
-            0x03, 0x10
-        )
-
-        val packet = GaiaCodec.decode(rxData)
-        assertNull(packet)
+    fun `decode invalid header`() {
+        assertNull(GaiaCodec.decode(hex(0x00, 0x04, 0x00, 0x00, 0x00, 0x1D, 0x05, 0x00)))
     }
 
     @Test
-    fun `decode too short data returns null`() {
-        val rxData = byteArrayOf(0x00, 0x1D)
-        val packet = GaiaCodec.decode(rxData)
-        assertNull(packet)
+    fun `decode wrong vendor`() {
+        assertNull(GaiaCodec.decode(hex(0xFF, 0x04, 0x00, 0x00, 0x00, 0x01, 0x05, 0x00)))
     }
 
     @Test
-    fun `anc mode from value`() {
-        assertEquals(AncMode.NORMAL, AncMode.fromValue(0x01))
-        assertEquals(AncMode.ANC, AncMode.fromValue(0x02))
-        assertEquals(AncMode.TRANSPARENCY, AncMode.fromValue(0x04))
-        assertEquals(AncMode.ADAPTIVE, AncMode.fromValue(0x08))
-        assertEquals(AncMode.NORMAL, AncMode.fromValue(0xFF.toByte()))
+    fun `decode too short`() {
+        assertNull(GaiaCodec.decode(hex(0xFF, 0x04, 0x00)))
     }
 
+    // ========== 工具方法 ==========
+
     @Test
-    fun `gain level from value`() {
-        assertEquals(GainLevel.HIGH, GainLevel.fromValue(0x00))
-        assertEquals(GainLevel.MEDIUM, GainLevel.fromValue(0x01))
-        assertEquals(GainLevel.LOW, GainLevel.fromValue(0x02))
-        assertEquals(GainLevel.MEDIUM, GainLevel.fromValue(0xFF.toByte()))
+    fun `isResponse and baseFeatureId`() {
+        assertTrue(GaiaConstants.isResponse(0x41))
+        assertEquals(0x40, GaiaConstants.baseFeatureId(0x41))
     }
 
     @Test
     fun `isMoondropDevice`() {
         assertTrue(GaiaConstants.isMoondropDevice("MOONDROP Space Travel"))
-        assertTrue(GaiaConstants.isMoondropDevice("MOONDROP Pudding"))
-        assertTrue(GaiaConstants.isMoondropDevice("moondrop ultrasonic"))
     }
 
     @Test
-    fun `response bit utilities`() {
-        assertEquals(0x1103, GaiaConstants.toResponseCmdId(0x1003))
-        assertTrue(GaiaConstants.isResponse(0x1103))
-        assertEquals(0x1003, GaiaConstants.baseCmdId(0x1103))
+    fun `packet cmdId`() {
+        assertEquals(0x0500, GaiaPacket(0x05, 0x00).cmdId)
+    }
+
+    // ========== ResponseParser ==========
+
+    @Test
+    fun `parse firmware fails on wrong feature`() {
+        assertNull(ResponseParser.parseFirmwareVersion(GaiaPacket(0x07, 0x00, "1.0".toByteArray())))
+    }
+
+    @Test
+    fun `parse anc mode`() {
+        val p = GaiaPacket(0x40, 0x03, byteArrayOf(0x02))
+        assertEquals(AncMode.TRANSPARENCY, ResponseParser.parseAncMode(p))
+    }
+
+    @Test
+    fun `isSuccess`() {
+        assertTrue(ResponseParser.isSuccess(GaiaPacket(0, 0)))
+        assertTrue(ResponseParser.isSuccess(GaiaPacket(0, 0, byteArrayOf(0x00))))
+    }
+
+    // ========== StreamDecoder ==========
+
+    private fun testPkt(fid: Int, cid: Int, vararg payload: Int): ByteArray {
+        return GaiaCodec.encode(GaiaPacket(fid, cid, ByteArray(payload.size) { payload[it].toByte() }))
+    }
+
+    @Test
+    fun `stream single`() {
+        assertEquals(1, GaiaCodec.StreamDecoder().feed(testPkt(0x05, 0x00, 0x33, 0x2E)).size)
+    }
+
+    @Test
+    fun `stream two packets`() {
+        val d = GaiaCodec.StreamDecoder()
+        assertEquals(2, d.feed(testPkt(0x05, 0x00) + testPkt(0x14, 0x01, 0x41)).size)
+    }
+
+    @Test
+    fun `stream split`() {
+        val d = GaiaCodec.StreamDecoder()
+        val full = testPkt(0x05, 0x00, 0x33)
+        assertEquals(0, d.feed(full.copyOfRange(0, 5)).size)
+        assertEquals(1, d.feed(full.copyOfRange(5, full.size)).size)
+    }
+
+    @Test
+    fun `stream byte by byte`() {
+        val d = GaiaCodec.StreamDecoder()
+        val full = testPkt(0x07, 0x00)
+        var count = 0
+        for (b in full) count += d.feed(byteArrayOf(b)).size
+        assertEquals(1, count)
+    }
+
+    @Test
+    fun `stream empty`() {
+        assertEquals(0, GaiaCodec.StreamDecoder().feed(byteArrayOf()).size)
     }
 }

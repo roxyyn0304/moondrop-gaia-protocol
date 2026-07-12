@@ -6,102 +6,72 @@ import com.moondrop.protocol.model.GaiaPacket
 
 /**
  * GAIA V3 响应解析器。
- *
- * 解析耳机返回的响应包，提取有用信息。
+ * 基于实测 MOONDROP Pudding (杰理芯片) 数据。
  */
 object ResponseParser {
 
-    /**
-     * 解析 ANC 模式响应。
-     *
-     * @param packet 响应包
-     * @return ANC 模式，解析失败返回 NORMAL
-     */
-    fun parseAncMode(packet: GaiaPacket): AncMode {
-        if (packet.payload.isEmpty()) return AncMode.NORMAL
+    /** 解析固件版本 (Feature 0x05, payload=ASCII) */
+    fun parseFirmwareVersion(packet: GaiaPacket): String? {
+        if (packet.featureId != GaiaConstants.FEATURE_FIRMWARE) return null
+        if (packet.payload.isEmpty()) return null
+        return try { String(packet.payload, Charsets.US_ASCII).trim() } catch (_: Exception) { null }
+    }
+
+    /** 解析序列号 (Feature 0x14, payload=ASCII) */
+    fun parseSerialNumber(packet: GaiaPacket): String? {
+        if (packet.featureId != GaiaConstants.FEATURE_SERIAL_ASCII) return null
+        if (packet.payload.isEmpty()) return null
+        val data = if (packet.payload.size > 1) packet.payload.copyOfRange(1, packet.payload.size) else packet.payload
+        return try { String(data, Charsets.US_ASCII).trim() } catch (_: Exception) { null }
+    }
+
+    /** 解析设备 ID (Feature 0x15, payload=ASCII) */
+    fun parseDeviceId(packet: GaiaPacket): String? {
+        if (packet.featureId != GaiaConstants.FEATURE_DEVICE_ID) return null
+        if (packet.payload.isEmpty()) return null
+        return try { String(packet.payload, Charsets.US_ASCII).trim() } catch (_: Exception) { null }
+    }
+
+    /** 解析 ANC 状态 (Feature 0x40, payload=[mode]) */
+    fun parseAncMode(packet: GaiaPacket): AncMode? {
+        if (GaiaConstants.baseFeatureId(packet.featureId) != GaiaConstants.FEATURE_ANC) return null
+        if (packet.payload.isEmpty()) return null
         return AncMode.fromValue(packet.payload[0])
     }
 
-    /**
-     * 解析 Gain 级别响应。
-     *
-     * @param packet 响应包
-     * @return Gain 级别，解析失败返回 MEDIUM
-     */
-    fun parseGainLevel(packet: GaiaPacket): GainLevel {
-        if (packet.payload.isEmpty()) return GainLevel.MEDIUM
+    /** 解析 ANC 可用模式 (Feature 0x40, Cmd 0x29) */
+    fun parseAncAvailableModes(packet: GaiaPacket): List<Int> {
+        if (packet.payload.isEmpty()) return emptyList()
+        return packet.payload.map { it.toInt() and 0xFF }
+    }
+
+    /** 解析 Gain 级别 (Feature 0x1E) */
+    fun parseGainLevel(packet: GaiaPacket): GainLevel? {
+        if (GaiaConstants.baseFeatureId(packet.featureId) != GaiaConstants.FEATURE_GAIN) return null
+        if (packet.payload.isEmpty()) return null
         return GainLevel.fromValue(packet.payload[0])
     }
 
-    /**
-     * 解析 LDAC 状态响应。
-     *
-     * @param packet 响应包
-     * @return true=已启用, false=未启用, null=解析失败
-     */
+    /** 解析 LDAC 状态 */
     fun parseLdacStatus(packet: GaiaPacket): Boolean? {
+        if (packet.featureId != (GaiaConstants.FEATURE_CODEC or 0x01)) return null
+        if (packet.commandId != GaiaConstants.CMD_LDAC_STATUS) return null
         if (packet.payload.isEmpty()) return null
         return packet.payload[0] == 0x01.toByte()
     }
 
-    /**
-     * 解析 LC3 状态响应。
-     *
-     * @param packet 响应包
-     * @return true=已启用, false=未启用, null=解析失败
-     */
+    /** 解析 LC3 状态 */
     fun parseLc3Status(packet: GaiaPacket): Boolean? {
+        if (packet.featureId != (GaiaConstants.FEATURE_CODEC or 0x01)) return null
+        if (packet.commandId != GaiaConstants.CMD_LC3_STATUS) return null
         if (packet.payload.isEmpty()) return null
         return packet.payload[0] == 0x01.toByte()
     }
 
-    /**
-     * 解析固件版本响应。
-     *
-     * @param packet 响应包
-     * @return 固件版本字符串，解析失败返回 null
-     */
-    fun parseFirmwareVersion(packet: GaiaPacket): String? {
-        if (packet.payload.isEmpty()) return null
-        return try {
-            String(packet.payload, Charsets.US_ASCII).trim()
-        } catch (e: Exception) {
-            null
-        }
+    fun isError(packet: GaiaPacket): Boolean {
+        return packet.payload.isNotEmpty() && packet.payload[0] == 0xFE.toByte()
     }
 
-    /**
-     * 解析序列号响应。
-     *
-     * @param packet 响应包
-     * @return 序列号字符串，解析失败返回 null
-     */
-    fun parseSerialNumber(packet: GaiaPacket): String? {
-        if (packet.payload.size < 2) return null
-        return try {
-            String(packet.payload, 1, packet.payload.size - 1, Charsets.US_ASCII).trim()
-        } catch (e: Exception) {
-            null
-        }
-    }
-
-    /**
-     * 解析 EQ 预设选择响应。
-     *
-     * @param packet 响应包
-     * @return 当前选中的预设 ID，解析失败返回 -1
-     */
-    fun parseEqPreset(packet: GaiaPacket): Int {
-        if (packet.payload.isEmpty()) return -1
-        return packet.payload[0].toInt() and 0xFF
-    }
-
-    /**
-     * 解析通用响应状态。
-     *
-     * @param packet 响应包
-     * @return true=成功, false=失败
-     */
     fun isSuccess(packet: GaiaPacket): Boolean {
         return packet.payload.isEmpty() || packet.payload[0] == 0x00.toByte()
     }
