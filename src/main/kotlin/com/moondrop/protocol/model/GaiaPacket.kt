@@ -5,8 +5,9 @@ package com.moondrop.protocol.model
  *
  * 包格式 (TX 和 RX 相同):
  * ```
- * FF 04 [Len:2 LE] [Seq:1] [Vendor:2 LE] [FeatureID:1] [CmdID:1] [Payload...]
+ * FF 04 [Len:2 BE] [Seq:1] [Vendor:1] [FeatureID:1] [CmdID:1] [Payload...]
  * ```
+ * Len = 1 + 1 + payload.size (feature + cmd + payload)
  */
 data class GaiaPacket(
     /** Feature ID */

@@ -3,12 +3,12 @@ package com.moondrop.protocol.model
 /**
  * ANC 模式枚举 (实测)。
  */
-enum class AncMode(val value: Byte, val label: String) {
+enum class AncMode(val value: Byte, val label: String, val available: Boolean = true) {
     OFF(0x00, "关闭"),
     TRANSPARENCY(0x02, "通透"),
     NOISE_CANCEL(0x04, "降噪"),
-    ADAPTIVE(0x08, "自适应"),
-    ANTI_WIND(0x10, "抗风噪");
+    ADAPTIVE(0x08, "自适应", available = false),
+    ANTI_WIND(0x10, "抗风噪", available = false);
 
     companion object {
         private val map = entries.associateBy { it.value }

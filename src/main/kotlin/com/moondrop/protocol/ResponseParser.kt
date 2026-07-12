@@ -32,7 +32,7 @@ object ResponseParser {
         return try { String(packet.payload, Charsets.US_ASCII).trim() } catch (_: Exception) { null }
     }
 
-    /** 解析 ANC 状态 (Feature 0x40, payload=[mode]) */
+    /** 解析 ANC 状态 (Feature 0x40, payload[0]=当前模式) */
     fun parseAncMode(packet: GaiaPacket): AncMode? {
         if (GaiaConstants.baseFeatureId(packet.featureId) != GaiaConstants.FEATURE_ANC) return null
         if (packet.payload.isEmpty()) return null
@@ -45,7 +45,7 @@ object ResponseParser {
         return packet.payload.map { it.toInt() and 0xFF }
     }
 
-    /** 解析 Gain 级别 (Feature 0x1E) */
+    /** 解析 Gain 级别 (Feature 0x1E, payload[0]=当前级别) */
     fun parseGainLevel(packet: GaiaPacket): GainLevel? {
         if (GaiaConstants.baseFeatureId(packet.featureId) != GaiaConstants.FEATURE_GAIN) return null
         if (packet.payload.isEmpty()) return null

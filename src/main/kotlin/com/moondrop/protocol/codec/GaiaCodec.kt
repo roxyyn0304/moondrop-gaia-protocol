@@ -8,9 +8,10 @@ import com.moondrop.protocol.model.GaiaPacket
  *
  * 包格式 (TX 和 RX 相同):
  * ```
- * FF 04 [Len:2 BE] [00] [Vendor:1] [FeatureID:1] [CmdID:1] [Payload...]
+ * FF 04 [Len:2 BE] [Seq:1] [Vendor:1] [FeatureID:1] [CmdID:1] [Payload...]
  * ```
- * Len = payload.size, 总包长 = 8 + Len
+ * Len = 1 + 1 + payload.size (feature + cmd + payload)
+ * 总包长 = 8 + payload.size
  */
 object GaiaCodec {
 

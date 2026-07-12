@@ -6,11 +6,15 @@ package com.moondrop.protocol
  * 基于实测 MOONDROP Pudding (杰理芯片) 数据。
  *
  * TX/RX 格式 (相同):
- *   FF 04 [Len:2 BE] [00] [Vendor:1] [FeatureID:1] [CmdID:1] [Payload...]
- *   Len = payload.size (仅载荷长度)
- *   总包长 = 8 + Len
+ *   FF 04 [Len:2 BE] [Seq:1] [Vendor:1] [FeatureID:1] [CmdID:1] [Payload...]
+ *   Len = 1 + 1 + payload.size (feature + cmd + payload)
+ *   总包长 = 8 + payload.size
  *
  * 响应位: Feature ID 的 bit 0 (Feature | 0x01 = 响应)
+ *
+ * 响应格式:
+ *   QUERY 响应: payload=[当前值] (1字节)
+ *   SET 响应: payload=[当前值, ?, ?] (3字节，[1][2]未知)
  *
  * 参考来源:
  * - moondrop-spp-controller (GitHub)
@@ -100,8 +104,8 @@ object GaiaConstants {
     const val ANC_OFF: Byte = 0x00        // 关闭
     const val ANC_TRANSPARENCY: Byte = 0x02  // 通透
     const val ANC_NOISE_CANCEL: Byte = 0x04  // 降噪
-    const val ANC_ADAPTIVE: Byte = 0x08   // 自适应 (降噪子模式)
-    const val ANC_ANTI_WIND: Byte = 0x10  // 抗风噪 (降噪子模式)
+    const val ANC_ADAPTIVE: Byte = 0x08   // 自适应 (暂不可用)
+    const val ANC_ANTI_WIND: Byte = 0x10  // 抗风噪 (暂不可用)
 
     // ========== 响应位 ==========
     const val RESPONSE_BIT: Int = 0x01

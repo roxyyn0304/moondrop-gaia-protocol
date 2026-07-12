@@ -2,6 +2,7 @@ package com.moondrop.protocol
 
 import com.moondrop.protocol.codec.GaiaCodec
 import com.moondrop.protocol.model.AncMode
+import com.moondrop.protocol.model.GainLevel
 import com.moondrop.protocol.model.GaiaPacket
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -128,6 +129,20 @@ class GaiaCodecTest {
     fun `parse anc mode`() {
         val p = GaiaPacket(0x40, 0x03, byteArrayOf(0x02))
         assertEquals(AncMode.TRANSPARENCY, ResponseParser.parseAncMode(p))
+    }
+
+    @Test
+    fun `parse anc mode from SET response`() {
+        // SET响应: payload=[当前值, 未知, 未知]
+        val p = GaiaPacket(0x41, 0x04, byteArrayOf(0x04, 0x02, 0x00))
+        assertEquals(AncMode.NOISE_CANCEL, ResponseParser.parseAncMode(p))
+    }
+
+    @Test
+    fun `parse gain level from SET response`() {
+        // SET响应: payload=[当前值, 未知, 未知]
+        val p = GaiaPacket(0x1F, 0x02, byteArrayOf(0x02, 0x00, 0x00))
+        assertEquals(GainLevel.LOW, ResponseParser.parseGainLevel(p))
     }
 
     @Test
