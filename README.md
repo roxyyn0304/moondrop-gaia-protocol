@@ -1,6 +1,6 @@
 # MOONDROP Pudding SPP 协议库
 
-MOONDROP Pudding (布丁) TWS 蓝牙 SPP 控制协议，基于实测逆向。
+MOONDROP Pudding (布丁) TWS 蓝牙 SPP 控制协议，基于 btsnoop 抓包逆向。
 
 ## 设备信息
 
@@ -22,28 +22,34 @@ FF 04 [Len:2 BE] [Seq:1] [Vendor:1] [Feature:1] [Cmd:1] [Payload...]
 - 总包长 = 8 + payload.size
 - 响应 Feature = 请求 Feature | 0x01 (bit0)
 
-## 响应格式
+### 协议结构（btsnoop 抓包确认）
 
-| 类型 | 格式 | 说明 |
-|------|------|------|
-| QUERY 响应 | `[当前值]` | 1 字节，直接是当前状态 |
-| SET 响应 | `[当前值, ?, ?]` | 3 字节，[0]=当前值，[1][2]=未知 |
+大部分查询使用 **Feature=0x00**，Cmd 为功能号。ANC/Gain/Codec 使用独立 Feature ID。
 
-## 支持的功能
+| Feature | 用途 |
+|---------|------|
+| 0x00 | 基础查询（固件版本、序列号、设备ID、EQ、配置、设备状态） |
+| 0x1E | Gain 增益控制 |
+| 0x20 | 编解码器（LDAC/LC3） |
+| 0x40 | ANC 降噪控制 |
+
+## 支持的功能 (btsnoop 抓包验证)
 
 | Feature | Cmd | 功能 | 状态 |
 |---------|-----|------|------|
-| 0x05 | 0x00 | 固件版本 | ✓ |
-| 0x14 | 0x01 | 序列号 | ✓ |
-| 0x15 | 0x00 | 设备ID | ✓ |
-| 0x07 | 0x00 | EQ 状态 | ✓ |
-| 0x0C | 各cmd | 配置查询 | ✓ |
-| 0x0D | 0x07 | 设备状态 | ✓ |
+| 0x00 | 0x01 | 支持的命令 | ✓ |
+| 0x00 | 0x05 | 固件版本 | ✓ |
+| 0x00 | 0x07 | EQ 查询 | ✓ |
+| 0x00 | 0x0C | 配置查询 | ✓ |
+| 0x00 | 0x0D | 设备状态 | ✓ |
+| 0x00 | 0x14 | 序列号 | ✓ |
+| 0x00 | 0x15 | 设备ID | ✓ |
 | 0x1E | 0x01 | Gain 查询 | ✓ |
 | 0x1E | 0x02 | Gain 设置 | ✓ |
 | 0x40 | 0x03 | ANC 查询 | ✓ |
 | 0x40 | 0x04 | ANC 设置 | ✓ |
 | 0x40 | 0x29 | ANC 可用模式 | ✓ |
+| 0x20 | 0x05 | LDAC 状态 | ✓ |
 
 ## ANC 模式
 
@@ -80,14 +86,26 @@ val bytes2 = GaiaCodec.encode(set)
 // Gain 设置为低
 val gainSet = GaiaPacketBuilder.gainSet(GainLevel.LOW)
 val bytes3 = GaiaCodec.encode(gainSet)
+
+// 固件版本查询
+val fwQuery = GaiaPacketBuilder.firmwareVersionQuery()
+val bytes4 = GaiaCodec.encode(fwQuery)
 ```
 
 ## Web 控制界面
 
 ```bash
+# 自动查找 MOONDROP 蓝牙串口
 python tools/webtest.py
-# 或指定串口
-python tools/webtest.py COM4
+
+# 指定串口
+python tools/webtest.py --port COM3
+
+# 指定 Web 端口
+python tools/webtest.py --web-port 9090
+
+# 同时指定
+python tools/webtest.py --port COM3 --web-port 9090
 ```
 
 功能：
@@ -95,7 +113,7 @@ python tools/webtest.py COM4
 - Gain 增益控制（高/中/低）
 - 快捷命令（固件版本/序列号/设备ID/EQ/设备状态）
 - 自定义命令发送
-- 实时通信日志
+- 实时通信日志（TX/RX 卡片式显示）
 
 ## 参考资料
 

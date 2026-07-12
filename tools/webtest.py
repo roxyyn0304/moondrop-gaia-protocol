@@ -16,7 +16,7 @@ def build_tx(fid, cid, payload=b"", seq=0):
     pkt = bytearray(8 + len(payload))
     pkt[0]=0xFF; pkt[1]=0x04; pkt[2]=((body_len>>8)&0xFF); pkt[3]=(body_len&0xFF)
     pkt[4]=seq; pkt[5]=VENDOR_ID&0xFF; pkt[6]=fid&0xFF; pkt[7]=cid&0xFF
-    if payload: pkt[8:]=payload
+    pkt[8:]=payload
     return bytes(pkt)
 
 def decode_packet(data):
@@ -37,22 +37,19 @@ def send_cmd(feature, cmd, payload_hex="", timeout=2.0, retries=2):
     last_rx=None
     for attempt in range(retries+1):
         with ser_lock:
-            if not ser or not ser.is_open: return {"error":"串口未连接"}
+            if not ser or not ser.is_open: return {"tx":decode_packet(tx),"rx_raw":None,"error":"串口未连接"}
             ser.reset_input_buffer(); ser.write(tx); ser.flush()
             deadline=time.time()+timeout; rx=b""
             while time.time()<deadline:
                 if ser.in_waiting>0:
                     rx+=ser.read(ser.in_waiting)
-                    # 检查是否收到完整包: 至少 8 字节头 + body_len
                     if len(rx)>=8 and rx[0]==0xFF and rx[1]==0x04:
                         body_len=(rx[2]<<8)|rx[3]
                         total=8+body_len
                         if len(rx)>=total:
                             rx=rx[:total]
                             break
-                    time.sleep(0.02)
-                else:
-                    time.sleep(0.02)
+                time.sleep(0.02)
         last_rx=rx
         if rx: break
         if attempt<retries: time.sleep(0.1)
@@ -60,11 +57,11 @@ def send_cmd(feature, cmd, payload_hex="", timeout=2.0, retries=2):
     return {"tx":decode_packet(tx),"rx_raw":last_rx.hex(" ").upper(),"decoded":decode_packet(last_rx)}
 
 PRESETS=[
-    {"name":"固件版本","feature":0x05,"cmd":0x00,"payload":""},
-    {"name":"序列号","feature":0x14,"cmd":0x01,"payload":""},
-    {"name":"设备ID","feature":0x15,"cmd":0x00,"payload":""},
-    {"name":"EQ 状态","feature":0x07,"cmd":0x00,"payload":""},
-    {"name":"设备状态","feature":0x0D,"cmd":0x07,"payload":""},
+    {"name":"固件版本","feature":0x00,"cmd":0x05,"payload":""},
+    {"name":"序列号","feature":0x00,"cmd":0x14,"payload":""},
+    {"name":"设备ID","feature":0x00,"cmd":0x15,"payload":""},
+    {"name":"EQ 查询","feature":0x00,"cmd":0x07,"payload":"00"},
+    {"name":"设备状态","feature":0x00,"cmd":0x0D,"payload":"0700000004"},
 ]
 
 HTML=r"""<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -93,10 +90,10 @@ body{font-family:system-ui,-apple-system,'Segoe UI',sans-serif;background:var(--
 .panels{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
 @media(max-width:640px){.panels{grid-template-columns:1fr}}
 
-.panel{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;position:relative}
-.panel::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;border-radius:10px 10px 0 0}
-.panel.anc::before{background:linear-gradient(90deg,var(--accent),transparent)}
-.panel.gain::before{background:linear-gradient(90deg,var(--amber),transparent)}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;position:relative;overflow:hidden}
+.panel::before{content:'';position:absolute;top:0;left:0;height:2px;width:60px}
+.panel.anc::before{background:var(--accent)}
+.panel.gain::before{background:var(--amber)}
 
 .panel-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
 .panel-title{font-size:11px;text-transform:uppercase;letter-spacing:1px;font-weight:600}
@@ -140,19 +137,29 @@ body{font-family:system-ui,-apple-system,'Segoe UI',sans-serif;background:var(--
 .log-header{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--border)}
 .log-header h3{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text2);font-weight:500}
 .log-header .count{font-size:10px;color:var(--dim);font-family:'SF Mono','Cascadia Code',Consolas,monospace}
-#log{max-height:320px;overflow-y:auto;font-size:11px;font-family:'SF Mono','Cascadia Code',Consolas,monospace;line-height:1.5;padding:8px 0}
-.log-entry{padding:4px 14px;border-bottom:1px solid rgba(255,255,255,.03)}
-.log-entry:last-child{border-bottom:none}
-.log-ts{color:var(--dim);font-size:10px}
-.log-tx{color:var(--amber);font-weight:500}
-.log-rx{color:var(--green);font-weight:500}
-.log-err{color:var(--red)}
-.log-info{color:var(--text2)}
-.log-hex{color:var(--dim);font-size:10px;word-break:break-all;margin-top:1px}
-.log-decode{margin-top:2px;padding:3px 6px;background:var(--bg);border-radius:3px;font-size:10px}
-.log-decode .feat{color:var(--accent)}.log-decode .info{color:var(--text2)}.log-decode .ascii{color:var(--green)}.log-decode .err{color:var(--red)}
+#log{max-height:360px;overflow-y:auto;font-size:11px;font-family:'SF Mono','Cascadia Code',Consolas,monospace;line-height:1.5;padding:6px 12px}
+.log-entry{margin-bottom:8px;border-radius:6px;background:var(--surface2);border:1px solid var(--border);overflow:hidden}
+.log-entry:last-child{margin-bottom:0}
+.log-entry.log-err-entry{border-color:rgba(239,68,68,.3);background:rgba(239,68,68,.05)}
+.log-pair{display:flex;flex-direction:column}
+.log-row{display:flex;align-items:baseline;gap:8px;padding:5px 10px}
+.log-row.tx{border-left:3px solid var(--amber)}
+.log-row.rx{border-left:3px solid var(--green)}
+.log-row.err{border-left:3px solid var(--red)}
+.log-dir{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;min-width:20px}
+.log-row.tx .log-dir{color:var(--amber)}
+.log-row.rx .log-dir{color:var(--green)}
+.log-row.err .log-dir{color:var(--red)}
+.log-ts{color:var(--dim);font-size:9px;margin-left:auto;white-space:nowrap}
+.log-hex{color:var(--text2);font-size:10px;word-break:break-all}
+.log-decode{padding:3px 10px 5px 33px;font-size:10px;color:var(--text2)}
+.log-decode .feat{color:var(--accent);font-weight:600}
+.log-decode .info{color:var(--dim)}
+.log-decode .ascii{color:var(--green)}
+.log-decode .err{color:var(--red)}
+.log-msg{padding:5px 10px 5px 33px;color:var(--red);font-size:10px}
 
-.empty{color:var(--dim);font-size:11px;padding:20px 0;text-align:center}
+.empty{color:var(--dim);font-size:11px;padding:24px 0;text-align:center}
 
 /* Scrollbar */
 ::-webkit-scrollbar{width:4px}
@@ -226,14 +233,18 @@ button:disabled{opacity:.4;cursor:not-allowed}
 const log=document.getElementById('log'),st=document.getElementById('st'),stText=document.getElementById('st-text'),logCount=document.getElementById('log-count');
 let logN=0;
 
-function addLog(h){
+function addLog(html, cls){
   if(log.children===1&&log.firstElementChild.classList.contains('empty'))log.innerHTML='';
-  const d=document.createElement('div');d.className='log-entry';d.innerHTML=h;log.prepend(d);
+  const d=document.createElement('div');d.className='log-entry'+(cls?' '+cls:'');d.innerHTML=html;log.prepend(d);
   while(log.children>50)log.removeChild(log.lastChild);
   logN++;logCount.textContent=logN;
 }
 
 function decodeInfo(d){if(!d)return'';let s=`<span class="feat">F:0x${d.feature.toString(16).padStart(2,'0')}</span> <span class="info">(${d.feature_name})</span> `;s+=`C:${d.cmd_hex}`;if(d.ascii)s+=` → "${d.ascii}"`;else if(d.payload.length)s+=` [${d.payload_hex}]`;return s}
+
+function logRow(dir, hex, decode, cls){
+  return `<div class="log-row ${dir}${cls?' '+cls:''}"><span class="log-dir">${dir}</span><span class="log-hex">${hex}</span><span class="log-ts">${new Date().toLocaleTimeString('zh',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'})}</span></div>${decode?`<div class="log-decode">${decode}</div>`:''}`;
+}
 
 function modeName(m){return{0:'关闭',2:'通透',4:'降噪',8:'自适应',16:'抗风噪'}[m]||`未知(0x${m.toString(16)})`}
 
@@ -252,43 +263,72 @@ function updateGainUI(level){
 async function send(f,c,p){
   document.querySelectorAll('.mode-btn,.preset,.send-btn').forEach(b=>b.disabled=true);
   st.className='dot';stText.textContent='通信中...';
-  const r=await fetch(`/api/send?feature=${f}&cmd=${c}&payload=${encodeURIComponent(p||'')}`);
-  const j=await r.json();
-  const t=new Date().toLocaleTimeString('zh',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'});
-  if(j.error&&!j.rx_raw){addLog(`<span class="log-ts">${t}</span> <span class="log-err">✗ ${j.error}</span>`);st.className='dot off';stText.textContent='通信失败'}
-  else{
-    let h=`<span class="log-ts">${t}</span> <span class="log-tx">TX</span> <span class="log-hex">${j.tx?j.tx.raw:''}</span><div class="log-decode">${decodeInfo(j.tx)}</div>`;
-    if(j.decoded){h+=`<span class="log-rx">RX</span> <span class="log-hex">${j.rx_raw}</span><div class="log-decode">${decodeInfo(j.decoded)}</div>`;
-      if((j.decoded.feature&0xFE)===0x40&&(j.decoded.cmd===3||j.decoded.cmd===4)){updateAncUI(j.decoded.payload[0])}
-      if((j.decoded.feature&0xFE)===0x1E&&(j.decoded.cmd===1||j.decoded.cmd===2)){updateGainUI(j.decoded.payload[0])}
-    }else if(j.rx_raw){h+=`<span class="log-rx">RX</span> <span class="log-hex">${j.rx_raw}</span>`}
-    else{h+=`<span class="log-info">设备无响应</span>`}
-    addLog(h);st.className='dot ok';stText.textContent='已连接';
+  try{
+    const r=await fetch(`/api/send?feature=${f}&cmd=${c}&payload=${encodeURIComponent(p||'')}`);
+    const j=await r.json();
+    if(j.error&&!j.rx_raw){
+      addLog(logRow('ERR',j.tx?j.tx.raw:'',`<span class="err">${j.error}</span>`),'log-err-entry');
+      st.className='dot off';stText.textContent='通信失败'
+    }else{
+      let h=logRow('TX',j.tx?j.tx.raw:'',decodeInfo(j.tx));
+      if(j.decoded){
+        h+=logRow('RX',j.rx_raw,decodeInfo(j.decoded));
+        if((j.decoded.feature&0xFE)===0x40&&(j.decoded.cmd===3||j.decoded.cmd===4)){updateAncUI(j.decoded.payload[0])}
+        if((j.decoded.feature&0xFE)===0x1E&&(j.decoded.cmd===1||j.decoded.cmd===2)){updateGainUI(j.decoded.payload[0])}
+      }else if(j.rx_raw){h+=logRow('RX',j.rx_raw,'')}
+      else{h+=`<div class="log-row err"><span class="log-dir">--</span><span class="log-msg">设备无响应</span></div>`}
+      addLog(h);st.className='dot ok';stText.textContent='已连接';
+    }
+  }catch(e){
+    addLog(logRow('ERR','',`<span class="err">请求失败: ${e.message}</span>`),'log-err-entry');
+    st.className='dot off';stText.textContent='连接失败';
   }
   await new Promise(r=>setTimeout(r,1200));
   document.querySelectorAll('.mode-btn,.preset,.send-btn').forEach(b=>b.disabled=false);
 }
 
-function sendCustom(){const f=parseInt(document.getElementById('f').value,16);const c=parseInt(document.getElementById('c').value,16);send(f,c,document.getElementById('p').value)}
+function sendCustom(){
+  try{
+    const f=parseInt(document.getElementById('f').value,16);
+    const c=parseInt(document.getElementById('c').value,16);
+    send(f,c,document.getElementById('p').value);
+  }catch(e){alert('参数错误: '+e.message)}
+}
 
 document.getElementById('anc-modes').addEventListener('click',e=>{const b=e.target.closest('.mode-btn');if(b){send(0x40,0x04,b.dataset.val);updateAncUI(parseInt(b.dataset.val,16))}});
 document.getElementById('gain-modes').addEventListener('click',e=>{const b=e.target.closest('.mode-btn');if(b){send(0x1E,0x02,b.dataset.val);updateGainUI(parseInt(b.dataset.val,16))}});
 
-fetch('/api/presets').then(r=>r.json()).then(ps=>{const g=document.getElementById('presets');ps.forEach(p=>{const b=document.createElement('button');b.className='preset';b.textContent=p.name;b.title=`F:0x${p.feature.toString(16).padStart(2,'0')} C:0x${p.cmd.toString(16).padStart(2,'0')}`;b.onclick=()=>send(p.feature,p.cmd,p.payload);g.appendChild(b)})});
+fetch('/api/presets').then(r=>r.json()).then(ps=>{const g=document.getElementById('presets');ps.forEach(p=>{const b=document.createElement('button');b.className='preset';b.textContent=p.name;b.title=`F:0x${p.feature.toString(16).padStart(2,'0')} C:0x${p.cmd.toString(16).padStart(2,'0')}`;b.onclick=()=>send(p.feature,p.cmd,p.payload);g.appendChild(b)})}).catch(e=>console.error('加载预设失败:',e));
 
 document.querySelectorAll('.mode-btn,.preset,.send-btn').forEach(b=>b.disabled=true);
-send(0x40,0x03);
-send(0x1E,0x01);
 
-fetch('/api/status').then(r=>r.json()).then(j=>{st.className=j.connected?'dot ok':'dot off';stText.textContent=j.connected?'已连接':'未连接'});
+(async()=>{
+  stText.textContent='探测设备...';
+  const ck=await fetch('/api/check').then(r=>r.json()).catch(()=>({online:false}));
+  if(ck.online){
+    st.className='dot ok';stText.textContent='已连接';
+    await send(0x40,0x03);await send(0x1E,0x01);
+  }else{
+    st.className='dot off';stText.textContent='设备未响应';
+    addLog('<span class="log-ts">'+new Date().toLocaleTimeString('zh',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'})+'</span> <span class="log-err">✗ 设备未响应 — 请确认蓝牙已配对且 SPP 已连接，然后刷新页面重试</span>');
+    document.querySelectorAll('.mode-btn,.preset,.send-btn').forEach(b=>b.disabled=false);
+  }
+})();
 </script></body></html>"""
+
+device_online=False
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
+        global device_online
         p=urlparse(self.path); q=parse_qs(p.query)
         if p.path in("/","/index.html"):
             self.send_response(200);self.send_header("Content-Type","text/html; charset=utf-8");self.end_headers();self.wfile.write(HTML.encode())
-        elif p.path=="/api/status":self._json({"connected":ser is not None and ser.is_open,"port":ser.port if ser else None})
+        elif p.path=="/api/status":self._json({"connected":ser is not None and ser.is_open,"online":device_online,"port":ser.port if ser else None})
+        elif p.path=="/api/check":
+            r=send_cmd(0x00, 0x05, "")
+            device_online=r.get("decoded") is not None
+            self._json({"online":device_online,"result":r})
         elif p.path=="/api/presets":self._json(PRESETS)
         elif p.path=="/api/send":self._json(send_cmd(int(q.get("feature",["0"])[0]),int(q.get("cmd",["0"])[0]),q.get("payload",[""])[0]))
         else:self.send_error(404)
@@ -310,19 +350,28 @@ def find_moondrop_port():
     return None
 
 def main():
-    global ser;port,web_port="COM3",8080
-    for i,a in enumerate(sys.argv[1:]):
-        if a=="--port"and i<len(sys.argv)-2:web_port=int(sys.argv[i+2])
-        elif a.startswith("COM"):port=a
-    # 自动检测串口
-    if port=="COM3":
-        found=find_moondrop_port()
-        if found:port=found
+    global ser;port,web_port=None,8080
+    args=sys.argv[1:]
+    i=0
+    while i<len(args):
+        if args[i]=="--port" and i+1<len(args):
+            if args[i+1].upper().startswith("COM"):port=args[i+1]
+            i+=2
+        elif args[i]=="--web-port" and i+1<len(args):
+            try:web_port=int(args[i+1])
+            except:pass
+            i+=2
+        elif args[i].upper().startswith("COM"):port=args[i];i+=1
+        else:i+=1
+    if not port:
+        port=find_moondrop_port()
+    if not port:
+        print("  未找到 MOONDROP 蓝牙串口");print("  用法: python webtest.py [--port COMx] [--web-port 8080]");return
     print(f"  串口: {port}")
     try:ser=serial.Serial(port,115200,timeout=0.5,write_timeout=2);print(f"  {port} OK")
     except Exception as e:print(f"  {port} failed: {e}")
     server=HTTPServer(("127.0.0.1",web_port),Handler)
-    print(f"\n  http://127.0.0.1:{web_port}\n")
+    print(f"  http://127.0.0.1:{web_port}\n")
     try:server.serve_forever()
     except KeyboardInterrupt:pass
     finally:

@@ -3,23 +3,20 @@ package com.moondrop.protocol
 /**
  * MOONDROP GAIA V3 协议常量定义。
  *
- * 基于实测 MOONDROP Pudding (杰理芯片) 数据。
+ * 基于实测 MOONDROP Pudding (杰理芯片) btsnoop 抓包数据 (2026-07)。
  *
- * TX/RX 格式 (相同):
+ * TX/RX 格式:
  *   FF 04 [Len:2 BE] [Seq:1] [Vendor:1] [FeatureID:1] [CmdID:1] [Payload...]
  *   Len = 1 + 1 + payload.size (feature + cmd + payload)
  *   总包长 = 8 + payload.size
  *
  * 响应位: Feature ID 的 bit 0 (Feature | 0x01 = 响应)
  *
- * 响应格式:
- *   QUERY 响应: payload=[当前值] (1字节)
- *   SET 响应: payload=[当前值, ?, ?] (3字节，[1][2]未知)
- *
- * 参考来源:
- * - moondrop-spp-controller (GitHub)
- * - SpaceTravel-Protocol (GitHub)
- * - 实测 MOONDROP Pudding 数据 (2026-07)
+ * 协议结构 (抓包确认):
+ *   大部分查询: Feature=0x00, Cmd=功能号, 响应 Feature=0x01
+ *   ANC 控制:   Feature=0x40, Cmd=子功能,  响应 Feature=0x41
+ *   Gain 控制:  Feature=0x1E, Cmd=子功能,  响应 Feature=0x1F
+ *   编解码器:   Feature=0x20, Cmd=子功能,  响应 Feature=0x21
  */
 object GaiaConstants {
 
@@ -29,83 +26,60 @@ object GaiaConstants {
     const val HEADER_0: Byte = 0xFF.toByte()
     const val HEADER_1: Byte = 0x04
 
-    // ========== Feature ID (实测) ==========
-    /** 设备管理: EQ 预设选择, 配置查询 */
-    const val FEATURE_DEVICE_MGMT: Int = 0x00
-    /** 基础功能: 固件版本, 心跳 */
-    const val FEATURE_BASIC: Int = 0x01
-    /** 序列号 */
-    const val FEATURE_SERIAL: Int = 0x03
-    /** 固件版本 (实测响应 Feature=0x05) */
-    const val FEATURE_FIRMWARE: Int = 0x05
-    /** EQ 状态 */
-    const val FEATURE_EQ: Int = 0x07
-    /** 自定义 EQ */
-    const val FEATURE_EQ_CUSTOM: Int = 0x0A
-    /** 配置查询 */
-    const val FEATURE_CONFIG: Int = 0x0C
-    /** 设备状态 */
-    const val FEATURE_DEVICE_STATE: Int = 0x0D
-    /** ANC 降噪控制 (实测确认) */
+    // ========== Feature ID (抓包确认) ==========
+    /** 基础查询 Feature (固件版本、序列号、设备ID、EQ、配置、设备状态等) */
+    const val FEATURE_BASE: Int = 0x00
+    /** ANC 降噪控制 */
     const val FEATURE_ANC: Int = 0x40
     /** Gain 增益控制 */
     const val FEATURE_GAIN: Int = 0x1E
-    /** 编解码器 */
+    /** 编解码器 (LDAC/LC3) */
     const val FEATURE_CODEC: Int = 0x20
-    /** 序列号 (ASCII) */
-    const val FEATURE_SERIAL_ASCII: Int = 0x14
-    /** 设备 ID (ASCII) */
-    const val FEATURE_DEVICE_ID: Int = 0x15
+    /** 设备管理 (EQ预设选择等) */
+    const val FEATURE_DEVICE_MGMT: Int = 0x1A
 
-    // ========== 命令 ID ==========
-    // Feature 0x00: 设备管理
-    const val CMD_EQ_SELECT: Int = 0x0C
-
-    // Feature 0x01: 基础功能
+    // ========== Cmd ID - 基础查询 (Feature=0x00, 抓包确认) ==========
+    /** 支持的命令列表 */
+    const val CMD_SUPPORTED_COMMANDS: Int = 0x01
+    /** 固件版本查询 */
     const val CMD_FIRMWARE_VERSION: Int = 0x05
+    /** 心跳 */
     const val CMD_HEARTBEAT: Int = 0x07
+    /** 设备状态 */
+    const val CMD_DEVICE_STATE: Int = 0x0D
+    /** 配置查询 (子命令在 payload 中) */
+    const val CMD_CONFIG_QUERY: Int = 0x0C
+    /** 序列号查询 */
+    const val CMD_SERIAL: Int = 0x14
+    /** 设备 ID 查询 */
+    const val CMD_DEVICE_ID: Int = 0x15
 
-    // Feature 0x05: 固件版本 (实测)
-    const val CMD_FW_VERSION: Int = 0x00
-
-    // Feature 0x0A: 自定义 EQ
-    const val CMD_EQ_CUSTOM: Int = 0x07
-
-    // Feature 0x0C: 配置查询
-    const val CMD_CONFIG_QUERY: Int = 0x00
-
-    // Feature 0x0D: 设备状态
-    const val CMD_DEVICE_STATE: Int = 0x07
-
-    // Feature 0x14: 序列号
-    const val CMD_SERIAL: Int = 0x01
-
-    // Feature 0x15: 设备 ID
-    const val CMD_DEVICE_ID: Int = 0x00
-
-    // Feature 0x40: ANC (实测确认)
-    /** ANC 状态查询: Cmd=0x03 */
+    // ========== Cmd ID - ANC (Feature=0x40, 抓包确认) ==========
+    /** ANC 状态查询 */
     const val CMD_ANC_QUERY: Int = 0x03
-    /** ANC 模式设置: Cmd=0x04, Payload=[mode] */
+    /** ANC 模式设置: Payload=[mode] */
     const val CMD_ANC_SET: Int = 0x04
-    /** ANC 可用模式查询: Cmd=0x29 */
+    /** ANC 可用模式查询 */
     const val CMD_ANC_AVAILABLE: Int = 0x29
 
-    // Feature 0x1E: Gain
+    // ========== Cmd ID - Gain (Feature=0x1E, 抓包确认) ==========
     const val CMD_GAIN_QUERY: Int = 0x01
     const val CMD_GAIN_SET: Int = 0x02
 
-    // Feature 0x20: 编解码器
-    const val CMD_LDAC_STATUS: Int = 0x02
+    // ========== Cmd ID - 编解码器 (Feature=0x20, 抓包确认) ==========
+    const val CMD_LDAC_STATUS: Int = 0x05
     const val CMD_LC3_STATUS: Int = 0x01
-    const val CMD_LC3_TOGGLE: Int = 0x04
 
-    // ========== ANC 模式 (实测) ==========
-    const val ANC_OFF: Byte = 0x00        // 关闭
-    const val ANC_TRANSPARENCY: Byte = 0x02  // 通透
-    const val ANC_NOISE_CANCEL: Byte = 0x04  // 降噪
-    const val ANC_ADAPTIVE: Byte = 0x08   // 自适应 (暂不可用)
-    const val ANC_ANTI_WIND: Byte = 0x10  // 抗风噪 (暂不可用)
+    // ========== Cmd ID - 设备管理 (Feature=0x1A, 抓包确认) ==========
+    const val CMD_DEVICE_MGMT_QUERY: Int = 0x00
+    const val CMD_DEVICE_MGMT_SET: Int = 0x01
+
+    // ========== ANC 模式 (抓包确认) ==========
+    const val ANC_OFF: Byte = 0x00
+    const val ANC_TRANSPARENCY: Byte = 0x01
+    const val ANC_NOISE_CANCEL: Byte = 0x02
+    const val ANC_ADAPTIVE: Byte = 0x08
+    const val ANC_ANTI_WIND: Byte = 0x10
 
     // ========== 响应位 ==========
     const val RESPONSE_BIT: Int = 0x01

@@ -21,8 +21,8 @@ class GaiaCodecTest {
         val encoded = GaiaCodec.encode(GaiaPacketBuilder.firmwareVersionQuery())
         assertEquals(0xFF, encoded[0].toInt() and 0xFF)
         assertEquals(0x04, encoded[1].toInt() and 0xFF)
-        assertEquals(0x05, encoded[6].toInt() and 0xFF) // FEATURE_FIRMWARE
-        assertEquals(0x00, encoded[7].toInt() and 0xFF) // CMD_FW_VERSION
+        assertEquals(0x00, encoded[6].toInt() and 0xFF) // FEATURE_BASE
+        assertEquals(0x05, encoded[7].toInt() and 0xFF) // CMD_FIRMWARE_VERSION
     }
 
     @Test
@@ -52,11 +52,12 @@ class GaiaCodecTest {
 
     @Test
     fun `decode firmware version`() {
-        val rx = hex(0xFF, 0x04, 0x00, 0x05, 0x00, 0x1D, 0x05, 0x00) +
+        val rx = hex(0xFF, 0x04, 0x00, 0x05, 0x00, 0x1D, 0x01, 0x05) +
                 "3.5.2".toByteArray(Charsets.US_ASCII)
         val p = GaiaCodec.decode(rx)
         assertNotNull(p)
-        assertEquals(0x05, p.featureId)
+        assertEquals(0x01, p.featureId) // response bit set
+        assertEquals(0x05, p.commandId)
         assertEquals("3.5.2", ResponseParser.parseFirmwareVersion(p))
     }
 
@@ -115,32 +116,30 @@ class GaiaCodecTest {
 
     @Test
     fun `packet cmdId`() {
-        assertEquals(0x0500, GaiaPacket(0x05, 0x00).cmdId)
+        assertEquals(0x0005, GaiaPacket(0x00, 0x05).cmdId)
     }
 
     // ========== ResponseParser ==========
 
     @Test
     fun `parse firmware fails on wrong feature`() {
-        assertNull(ResponseParser.parseFirmwareVersion(GaiaPacket(0x07, 0x00, "1.0".toByteArray())))
+        assertNull(ResponseParser.parseFirmwareVersion(GaiaPacket(0x07, 0x05, "1.0".toByteArray())))
     }
 
     @Test
     fun `parse anc mode`() {
-        val p = GaiaPacket(0x40, 0x03, byteArrayOf(0x02))
+        val p = GaiaPacket(0x41, 0x03, byteArrayOf(0x02))
         assertEquals(AncMode.TRANSPARENCY, ResponseParser.parseAncMode(p))
     }
 
     @Test
     fun `parse anc mode from SET response`() {
-        // SET响应: payload=[当前值, 未知, 未知]
         val p = GaiaPacket(0x41, 0x04, byteArrayOf(0x04, 0x02, 0x00))
         assertEquals(AncMode.NOISE_CANCEL, ResponseParser.parseAncMode(p))
     }
 
     @Test
     fun `parse gain level from SET response`() {
-        // SET响应: payload=[当前值, 未知, 未知]
         val p = GaiaPacket(0x1F, 0x02, byteArrayOf(0x02, 0x00, 0x00))
         assertEquals(GainLevel.LOW, ResponseParser.parseGainLevel(p))
     }
@@ -159,19 +158,19 @@ class GaiaCodecTest {
 
     @Test
     fun `stream single`() {
-        assertEquals(1, GaiaCodec.StreamDecoder().feed(testPkt(0x05, 0x00, 0x33, 0x2E)).size)
+        assertEquals(1, GaiaCodec.StreamDecoder().feed(testPkt(0x00, 0x05, 0x33, 0x2E)).size)
     }
 
     @Test
     fun `stream two packets`() {
         val d = GaiaCodec.StreamDecoder()
-        assertEquals(2, d.feed(testPkt(0x05, 0x00) + testPkt(0x14, 0x01, 0x41)).size)
+        assertEquals(2, d.feed(testPkt(0x00, 0x05) + testPkt(0x00, 0x14, 0x41)).size)
     }
 
     @Test
     fun `stream split`() {
         val d = GaiaCodec.StreamDecoder()
-        val full = testPkt(0x05, 0x00, 0x33)
+        val full = testPkt(0x00, 0x05, 0x33)
         assertEquals(0, d.feed(full.copyOfRange(0, 5)).size)
         assertEquals(1, d.feed(full.copyOfRange(5, full.size)).size)
     }
@@ -179,7 +178,7 @@ class GaiaCodecTest {
     @Test
     fun `stream byte by byte`() {
         val d = GaiaCodec.StreamDecoder()
-        val full = testPkt(0x07, 0x00)
+        val full = testPkt(0x00, 0x07)
         var count = 0
         for (b in full) count += d.feed(byteArrayOf(b)).size
         assertEquals(1, count)

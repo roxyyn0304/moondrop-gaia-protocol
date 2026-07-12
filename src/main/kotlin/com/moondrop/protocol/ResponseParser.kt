@@ -6,63 +6,68 @@ import com.moondrop.protocol.model.GaiaPacket
 
 /**
  * GAIA V3 响应解析器。
- * 基于实测 MOONDROP Pudding (杰理芯片) 数据。
+ * 基于实测 MOONDROP Pudding (杰理芯片) btsnoop 抓包数据。
+ *
+ * 基础查询响应 Feature=0x01, 通过 Cmd 区分功能。
  */
 object ResponseParser {
 
-    /** 解析固件版本 (Feature 0x05, payload=ASCII) */
+    /** 解析固件版本 (Feature=0x01, Cmd=0x05, payload=ASCII) */
     fun parseFirmwareVersion(packet: GaiaPacket): String? {
-        if (packet.featureId != GaiaConstants.FEATURE_FIRMWARE) return null
+        if (packet.featureId != (GaiaConstants.FEATURE_BASE or GaiaConstants.RESPONSE_BIT)) return null
+        if (packet.commandId != GaiaConstants.CMD_FIRMWARE_VERSION) return null
         if (packet.payload.isEmpty()) return null
         return try { String(packet.payload, Charsets.US_ASCII).trim() } catch (_: Exception) { null }
     }
 
-    /** 解析序列号 (Feature 0x14, payload=ASCII) */
+    /** 解析序列号 (Feature=0x01, Cmd=0x14, payload=ASCII) */
     fun parseSerialNumber(packet: GaiaPacket): String? {
-        if (packet.featureId != GaiaConstants.FEATURE_SERIAL_ASCII) return null
-        if (packet.payload.isEmpty()) return null
-        val data = if (packet.payload.size > 1) packet.payload.copyOfRange(1, packet.payload.size) else packet.payload
-        return try { String(data, Charsets.US_ASCII).trim() } catch (_: Exception) { null }
-    }
-
-    /** 解析设备 ID (Feature 0x15, payload=ASCII) */
-    fun parseDeviceId(packet: GaiaPacket): String? {
-        if (packet.featureId != GaiaConstants.FEATURE_DEVICE_ID) return null
+        if (packet.featureId != (GaiaConstants.FEATURE_BASE or GaiaConstants.RESPONSE_BIT)) return null
+        if (packet.commandId != GaiaConstants.CMD_SERIAL) return null
         if (packet.payload.isEmpty()) return null
         return try { String(packet.payload, Charsets.US_ASCII).trim() } catch (_: Exception) { null }
     }
 
-    /** 解析 ANC 状态 (Feature 0x40, payload[0]=当前模式) */
+    /** 解析设备 ID (Feature=0x01, Cmd=0x15, payload=ASCII) */
+    fun parseDeviceId(packet: GaiaPacket): String? {
+        if (packet.featureId != (GaiaConstants.FEATURE_BASE or GaiaConstants.RESPONSE_BIT)) return null
+        if (packet.commandId != GaiaConstants.CMD_DEVICE_ID) return null
+        if (packet.payload.isEmpty()) return null
+        return try { String(packet.payload, Charsets.US_ASCII).trim() } catch (_: Exception) { null }
+    }
+
+    /** 解析 ANC 状态 (Feature=0x41, payload[0]=当前模式, 接受 query/set 响应) */
     fun parseAncMode(packet: GaiaPacket): AncMode? {
         if (GaiaConstants.baseFeatureId(packet.featureId) != GaiaConstants.FEATURE_ANC) return null
         if (packet.payload.isEmpty()) return null
         return AncMode.fromValue(packet.payload[0])
     }
 
-    /** 解析 ANC 可用模式 (Feature 0x40, Cmd 0x29) */
+    /** 解析 ANC 可用模式 (Feature=0x41, Cmd=0x29) */
     fun parseAncAvailableModes(packet: GaiaPacket): List<Int> {
+        if (packet.commandId != GaiaConstants.CMD_ANC_AVAILABLE) return emptyList()
         if (packet.payload.isEmpty()) return emptyList()
         return packet.payload.map { it.toInt() and 0xFF }
     }
 
-    /** 解析 Gain 级别 (Feature 0x1E, payload[0]=当前级别) */
+    /** 解析 Gain 级别 (Feature=0x1F, payload[0]=当前级别, 接受 query/set 响应) */
     fun parseGainLevel(packet: GaiaPacket): GainLevel? {
         if (GaiaConstants.baseFeatureId(packet.featureId) != GaiaConstants.FEATURE_GAIN) return null
         if (packet.payload.isEmpty()) return null
         return GainLevel.fromValue(packet.payload[0])
     }
 
-    /** 解析 LDAC 状态 */
+    /** 解析 LDAC 状态 (Feature=0x21, Cmd=0x05) */
     fun parseLdacStatus(packet: GaiaPacket): Boolean? {
-        if (packet.featureId != (GaiaConstants.FEATURE_CODEC or 0x01)) return null
+        if (packet.featureId != (GaiaConstants.FEATURE_CODEC or GaiaConstants.RESPONSE_BIT)) return null
         if (packet.commandId != GaiaConstants.CMD_LDAC_STATUS) return null
         if (packet.payload.isEmpty()) return null
         return packet.payload[0] == 0x01.toByte()
     }
 
-    /** 解析 LC3 状态 */
+    /** 解析 LC3 状态 (Feature=0x21, Cmd=0x01) */
     fun parseLc3Status(packet: GaiaPacket): Boolean? {
-        if (packet.featureId != (GaiaConstants.FEATURE_CODEC or 0x01)) return null
+        if (packet.featureId != (GaiaConstants.FEATURE_CODEC or GaiaConstants.RESPONSE_BIT)) return null
         if (packet.commandId != GaiaConstants.CMD_LC3_STATUS) return null
         if (packet.payload.isEmpty()) return null
         return packet.payload[0] == 0x01.toByte()
