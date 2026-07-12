@@ -22,6 +22,13 @@ FF 04 [Len:2 BE] [Seq:1] [Vendor:1] [Feature:1] [Cmd:1] [Payload...]
 - 总包长 = 8 + payload.size
 - 响应 Feature = 请求 Feature | 0x01 (bit0)
 
+### 响应格式
+
+| 类型 | 格式 | 说明 |
+|------|------|------|
+| QUERY 响应 | `[当前值]` | 1 字节，直接是当前状态 |
+| SET 响应 | `[当前值, ?, ?]` | 3 字节，[0]=当前值，[1][2]=未知 |
+
 ### 协议结构（btsnoop 抓包确认）
 
 大部分查询使用 **Feature=0x00**，Cmd 为功能号。ANC/Gain/Codec 使用独立 Feature ID。
@@ -50,6 +57,8 @@ FF 04 [Len:2 BE] [Seq:1] [Vendor:1] [Feature:1] [Cmd:1] [Payload...]
 | 0x40 | 0x04 | ANC 设置 | ✓ |
 | 0x40 | 0x29 | ANC 可用模式 | ✓ |
 | 0x20 | 0x05 | LDAC 状态 | ✓ |
+| 0x20 | 0x01 | LC3 状态 | ✓ |
+| 0x1A | 0x00 | 设备管理查询 | ✓ |
 
 ## ANC 模式
 
@@ -109,11 +118,22 @@ python tools/webtest.py --port COM3 --web-port 9090
 ```
 
 功能：
+- **自动串口检测** — 通过 VID=0x05D6 自动查找 MOONDROP 设备，无需手动指定
 - ANC 降噪控制（关闭/通透/降噪）
 - Gain 增益控制（高/中/低）
 - 快捷命令（固件版本/序列号/设备ID/EQ/设备状态）
 - 自定义命令发送
-- 实时通信日志（TX/RX 卡片式显示）
+- 卡片式实时通信日志（TX=琥珀色, RX=绿色, ERR=红色）
+
+## 构建与测试
+
+```bash
+# Kotlin 库 (Gradle)
+./gradlew build          # 编译 + 运行 24 个测试
+
+# Web 控制界面
+python tools/webtest.py  # 自动检测串口，启动 Web UI
+```
 
 ## 参考资料
 
