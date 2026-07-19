@@ -34,6 +34,12 @@ object GaiaConstants {
     const val FEATURE_GAIN: Int = 0x1E
     /** 编解码器 (LDAC/LC3) */
     const val FEATURE_CODEC: Int = 0x20
+    /** EQ 参数读写 */
+    const val FEATURE_EQ: Int = 0x0A
+    /** 设备信息（配对设备名、子类型） */
+    const val FEATURE_DEVICE_INFO: Int = 0x28
+    /** 电池通知 */
+    const val FEATURE_BATTERY: Int = 0x2C
     /** 设备管理 (EQ预设选择等) */
     const val FEATURE_DEVICE_MGMT: Int = 0x1A
 
@@ -42,8 +48,8 @@ object GaiaConstants {
     const val CMD_SUPPORTED_COMMANDS: Int = 0x01
     /** 固件版本查询 */
     const val CMD_FIRMWARE_VERSION: Int = 0x05
-    /** 心跳 */
-    const val CMD_HEARTBEAT: Int = 0x07
+    /** EQ 状态查询（兼作心跳） */
+    const val CMD_EQ_STATUS: Int = 0x07
     /** 设备状态 */
     const val CMD_DEVICE_STATE: Int = 0x0D
     /** 配置查询 (子命令在 payload 中) */
@@ -60,6 +66,10 @@ object GaiaConstants {
     const val CMD_ANC_SET: Int = 0x04
     /** ANC 可用模式查询 */
     const val CMD_ANC_AVAILABLE: Int = 0x29
+    /** ANC 状态异步推送 */
+    const val CMD_ANC_NOTIFY: Int = 0x81
+    /** ANC 错误通知 */
+    const val CMD_ANC_ERROR: Int = 0x84
 
     // ========== Cmd ID - Gain (Feature=0x1E, 抓包确认) ==========
     const val CMD_GAIN_QUERY: Int = 0x01
@@ -68,17 +78,34 @@ object GaiaConstants {
     // ========== Cmd ID - 编解码器 (Feature=0x20, 抓包确认) ==========
     const val CMD_LDAC_STATUS: Int = 0x05
     const val CMD_LC3_STATUS: Int = 0x01
+    const val CMD_CODEC_SET: Int = 0x06
 
     // ========== Cmd ID - 设备管理 (Feature=0x1A, 抓包确认) ==========
     const val CMD_DEVICE_MGMT_QUERY: Int = 0x00
     const val CMD_DEVICE_MGMT_SET: Int = 0x01
 
-    // ========== ANC 模式 (抓包确认) ==========
+    // ========== Cmd ID - EQ 参数 (Feature=0x0A, btsnoop 确认, 格式待确认) ==========
+    const val CMD_EQ_BANDWIDTH: Int = 0x03
+    const val CMD_EQ_PARAM_QUERY: Int = 0x05
+    const val CMD_EQ_PARAM_SET: Int = 0x06
+
+    // ========== Cmd ID - 设备信息 (Feature=0x28, btsnoop 确认) ==========
+    const val CMD_DEVICE_INFO: Int = 0x01
+    const val CMD_DEVICE_SUBTYPE: Int = 0x03
+    const val CMD_CONNECTED_DEVICE_NAME: Int = 0x05
+
+    // ========== Cmd ID - 电池通知 (Feature=0x2C, btsnoop 确认, 格式待确认) ==========
+    const val CMD_BATTERY_QUERY_1: Int = 0x01
+    const val CMD_BATTERY_QUERY_2: Int = 0x02
+    const val CMD_BATTERY_NOTIFY: Int = 0x03
+
+    // ========== ANC 模式 (水月雨 APP btsnoop 确认) ==========
     const val ANC_OFF: Byte = 0x00
-    const val ANC_TRANSPARENCY: Byte = 0x01
-    const val ANC_NOISE_CANCEL: Byte = 0x02
-    const val ANC_ADAPTIVE: Byte = 0x08
-    const val ANC_ANTI_WIND: Byte = 0x10
+    const val ANC_ADAPTIVE: Byte = 0x01
+    const val ANC_TRANSPARENCY: Byte = 0x02
+    const val ANC_ANTI_WIND: Byte = 0x03
+    /** 降噪组入口，SET 后进入降噪并恢复上次子模式 */
+    const val ANC_NOISE_CANCEL: Byte = 0x04
 
     // ========== 响应位 ==========
     const val RESPONSE_BIT: Int = 0x01

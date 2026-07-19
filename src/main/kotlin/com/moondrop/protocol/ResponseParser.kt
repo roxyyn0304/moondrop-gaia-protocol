@@ -43,7 +43,8 @@ object ResponseParser {
         return AncMode.fromValue(packet.payload[0])
     }
 
-    /** 解析 ANC 可用模式 (Feature=0x41, Cmd=0x29) */
+    /** 解析 ANC 可用模式 (Feature=0x41, Cmd=0x29)
+     *  返回 5 字节：关闭/自适应/通透/抗风噪/降噪 可用标志 (0x01=可用) */
     fun parseAncAvailableModes(packet: GaiaPacket): List<Int> {
         if (GaiaConstants.baseFeatureId(packet.featureId) != GaiaConstants.FEATURE_ANC) return emptyList()
         if (packet.commandId != GaiaConstants.CMD_ANC_AVAILABLE) return emptyList()

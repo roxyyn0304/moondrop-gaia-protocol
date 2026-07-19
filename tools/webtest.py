@@ -5,11 +5,21 @@ from urllib.parse import urlparse, parse_qs
 import serial
 
 VENDOR_ID = 0x001D
-FEATURE_NAMES = {0x00:"基础查询",0x1E:"增益",0x20:"编解码器",0x40:"ANC",0x1A:"设备管理"}
-ANC_MODES = {0x00:"关闭",0x01:"通透",0x02:"降噪",0x08:"自适应",0x10:"抗风噪"}
+FEATURE_NAMES = {0x00:"基础查询",0x0A:"EQ",0x1A:"设备管理",0x1E:"增益",0x20:"编解码器",0x28:"设备信息",0x2C:"电池",0x40:"ANC"}
+ANC_MODES = {0x00:"关闭",0x01:"自适应",0x02:"通透",0x03:"抗风噪"}
 
 def feature_name(f):
     return FEATURE_NAMES.get(f&0xFE, "") or f"0x{f:02X}"
+
+def parse_battery(payload):
+    """解析电量 [ID:1][level:1]... 对, 来自 F=0x1B 响应, 0xFF=不可用"""
+    if len(payload) < 2 or len(payload) % 2 != 0:
+        return None
+    names = {1: "左耳", 2: "右耳", 3: "充电盒"}
+    bats = []
+    for i in range(0, len(payload), 2):
+        bats.append({"id": payload[i], "name": names.get(payload[i], f"设备{payload[i]}"), "level": payload[i+1]})
+    return bats
 
 def build_tx(fid, cid, payload=b"", seq=0):
     body_len = len(payload)  # payload size only (matches btsnoop capture)
@@ -27,7 +37,11 @@ def decode_packet(data):
     if p:
         chars=[chr(b) if 32<=b<127 else None for b in p]
         if sum(1 for ch in chars if ch)>=len(p)*0.6: ascii_str="".join(ch for ch in chars if ch)
-    return {"feature":f,"feature_name":feature_name(f),"cmd":c,"cmd_hex":f"0x{c:02X}","payload":p,"payload_hex":" ".join(f"{b:02X}" for b in p),"ascii":ascii_str,"raw":data.hex(" ").upper()}
+    result = {"feature":f,"feature_name":feature_name(f),"cmd":c,"cmd_hex":f"0x{c:02X}","payload":p,"payload_hex":" ".join(f"{b:02X}" for b in p),"ascii":ascii_str,"raw":data.hex(" ").upper()}
+    if (f & 0xFE) == 0x1A and len(p) >= 2 and len(p) % 2 == 0:
+        battery = parse_battery(p)
+        if battery: result["battery"] = battery
+    return result
 
 ser=None; ser_lock=threading.Lock()
 
@@ -60,260 +74,195 @@ PRESETS=[
     {"name":"固件版本","feature":0x00,"cmd":0x05,"payload":""},
     {"name":"序列号","feature":0x00,"cmd":0x14,"payload":""},
     {"name":"设备ID","feature":0x00,"cmd":0x15,"payload":""},
-    {"name":"EQ 查询","feature":0x00,"cmd":0x07,"payload":"00"},
+    {"name":"EQ 状态","feature":0x00,"cmd":0x07,"payload":""},
     {"name":"设备状态","feature":0x00,"cmd":0x0D,"payload":"0700000004"},
+    {"name":"ANC 可用模式","feature":0x40,"cmd":0x29,"payload":""},
+    {"name":"LDAC 状态","feature":0x20,"cmd":0x05,"payload":""},
+    {"name":"LC3 状态","feature":0x20,"cmd":0x01,"payload":""},
+    {"name":"Gain 查询","feature":0x1E,"cmd":0x01,"payload":""},
+    {"name":"连接设备名","feature":0x28,"cmd":0x05,"payload":""},
 ]
 
 HTML=r"""<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>MOONDROP Pudding Controller</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-:root{
-  --bg:#0b0d11;--surface:#13161d;--surface2:#1c2029;--border:#282d38;
-  --text:#e2e6ed;--text2:#6b7385;--accent:#3b82f6;--amber:#f59e0b;
-  --green:#22c55e;--red:#ef4444;--dim:#3d4455;
-}
-body{font-family:system-ui,-apple-system,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:16px;line-height:1.5}
-.app{max-width:900px;margin:0 auto}
-
-/* Header */
-.hdr{display:flex;align-items:center;justify-content:space-between;padding:12px 0 16px;border-bottom:1px solid var(--border);margin-bottom:20px}
-.hdr-left{display:flex;align-items:center;gap:10px}
-.hdr h1{font-size:14px;font-weight:600;letter-spacing:.3px}
-.hdr .device{font-size:12px;color:var(--text2);font-family:'SF Mono','Cascadia Code',Consolas,monospace}
-.status-badge{display:flex;align-items:center;gap:6px;font-size:11px;padding:4px 10px;border-radius:20px;border:1px solid var(--border);background:var(--surface)}
-.status-badge .dot{width:7px;height:7px;border-radius:50%}
-.status-badge .dot.ok{background:var(--green);box-shadow:0 0 6px rgba(34,197,94,.4)}
-.status-badge .dot.off{background:var(--dim)}
-
-/* Control panels - side by side */
-.panels{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
-@media(max-width:640px){.panels{grid-template-columns:1fr}}
-
-.panel{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;position:relative;overflow:hidden}
-.panel::before{content:'';position:absolute;top:0;left:0;height:2px;width:60px}
-.panel.anc::before{background:var(--accent)}
-.panel.gain::before{background:var(--amber)}
-
-.panel-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
-.panel-title{font-size:11px;text-transform:uppercase;letter-spacing:1px;font-weight:600}
-.panel.anc .panel-title{color:var(--accent)}
-.panel.gain .panel-title{color:var(--amber)}
-.panel-status{font-family:'SF Mono','Cascadia Code',Consolas,monospace;font-size:13px;font-weight:600;padding:2px 8px;border-radius:4px;background:var(--bg)}
-.panel.anc .panel-status{color:var(--accent)}
-.panel.gain .panel-status{color:var(--amber)}
-
-.mode-btns{display:flex;gap:6px}
-.mode-btn{flex:1;padding:10px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text2);font-family:inherit;font-size:12px;font-weight:500;cursor:pointer;transition:all .15s;text-align:center}
-.mode-btn:hover{border-color:var(--border);color:var(--text);background:var(--surface2)}
-.mode-btn.active{border-color:currentColor;background:rgba(255,255,255,.03)}
-.panel.anc .mode-btn.active{color:var(--accent);border-color:var(--accent);box-shadow:0 0 12px rgba(59,130,246,.15)}
-.panel.gain .mode-btn.active{color:var(--amber);border-color:var(--amber);box-shadow:0 0 12px rgba(245,158,11,.15)}
-.mode-btn .label{display:block}
-.mode-btn .hex{display:block;font-family:'SF Mono','Cascadia Code',Consolas,monospace;font-size:9px;color:var(--dim);margin-top:2px}
-.mode-btn.active .hex{opacity:.7}
-
-/* Tools row */
-.tools{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
-@media(max-width:640px){.tools{grid-template-columns:1fr}}
-
-.tool-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px}
-.tool-card h3{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text2);margin-bottom:10px;font-weight:500}
-
-.presets{display:flex;flex-wrap:wrap;gap:5px}
-.preset{padding:5px 10px;border-radius:4px;border:1px solid var(--border);background:var(--bg);color:var(--text2);font-family:inherit;font-size:11px;cursor:pointer;transition:all .12s}
-.preset:hover{border-color:var(--accent);color:var(--text);background:var(--surface2)}
-.preset:active{transform:scale(.97)}
-
-.custom{display:flex;gap:5px;flex-wrap:wrap;align-items:end}
-.custom label{font-size:9px;color:var(--text2);display:block;margin-bottom:2px;text-transform:uppercase;letter-spacing:.5px}
-.custom input{background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px 7px;font:11px 'SF Mono','Cascadia Code',Consolas,monospace;width:52px}
-.custom input.wide{width:80px}
-.custom .send-btn{padding:5px 12px;border-radius:4px;border:1px solid var(--accent);background:rgba(59,130,246,.1);color:var(--accent);font-family:inherit;font-size:11px;font-weight:500;cursor:pointer;transition:all .12s}
-.custom .send-btn:hover{background:rgba(59,130,246,.2)}
-
-/* Log terminal */
-.log-section{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden}
-.log-header{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--border)}
-.log-header h3{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text2);font-weight:500}
-.log-header .count{font-size:10px;color:var(--dim);font-family:'SF Mono','Cascadia Code',Consolas,monospace}
-#log{max-height:360px;overflow-y:auto;font-size:11px;font-family:'SF Mono','Cascadia Code',Consolas,monospace;line-height:1.5;padding:6px 12px}
-.log-entry{margin-bottom:8px;border-radius:6px;background:var(--surface2);border:1px solid var(--border);overflow:hidden}
-.log-entry:last-child{margin-bottom:0}
-.log-entry.log-err-entry{border-color:rgba(239,68,68,.3);background:rgba(239,68,68,.05)}
-.log-pair{display:flex;flex-direction:column}
-.log-row{display:flex;align-items:baseline;gap:8px;padding:5px 10px}
-.log-row.tx{border-left:3px solid var(--amber)}
-.log-row.rx{border-left:3px solid var(--green)}
-.log-row.err{border-left:3px solid var(--red)}
-.log-dir{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;min-width:20px}
-.log-row.tx .log-dir{color:var(--amber)}
-.log-row.rx .log-dir{color:var(--green)}
-.log-row.err .log-dir{color:var(--red)}
-.log-ts{color:var(--dim);font-size:9px;margin-left:auto;white-space:nowrap}
-.log-hex{color:var(--text2);font-size:10px;word-break:break-all}
-.log-decode{padding:3px 10px 5px 33px;font-size:10px;color:var(--text2)}
-.log-decode .feat{color:var(--accent);font-weight:600}
-.log-decode .info{color:var(--dim)}
-.log-decode .ascii{color:var(--green)}
-.log-decode .err{color:var(--red)}
-.log-msg{padding:5px 10px 5px 33px;color:var(--red);font-size:10px}
-
-.empty{color:var(--dim);font-size:11px;padding:24px 0;text-align:center}
-
-/* Scrollbar */
-::-webkit-scrollbar{width:4px}
+:root{--bg:#0a0c10;--surface:#12141a;--surface2:#181b24;--border:#1e2230;--text:#e2e8f0;--text2:#6b7280;--dim:#374151;--anc:#2b7be4;--gain:#e68a2e;--bat:#22a06b;--tx:#e68a2e;--rx:#22a06b;--err:#ef4444}
+body{font-family:system-ui,-apple-system,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);padding:12px;font-size:13px;line-height:1.5;min-height:100vh}
+.app{max-width:960px;margin:0 auto}
+.hdr{display:flex;align-items:center;justify-content:space-between;padding:8px 0 12px;border-bottom:1px solid var(--border);margin-bottom:12px}
+.hdr h1{font-size:13px;font-weight:600;letter-spacing:.3px}
+.hdr .device{font-size:11px;color:var(--text2);font-family:'SF Mono','Cascadia Code',Consolas,monospace}
+.st{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);font-family:'SF Mono',Consolas,monospace}
+.st-d{width:6px;height:6px;border-radius:50%;background:var(--dim)}
+.st-d.ok{background:var(--rx);box-shadow:0 0 6px rgba(34,160,107,.4)}
+.st-d.off{background:var(--dim)}
+.grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px}
+@media(max-width:700px){.grid{grid-template-columns:1fr}}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.ph{display:flex;align-items:center;justify-content:space-between;padding:10px 12px 8px;font-size:10px;text-transform:uppercase;letter-spacing:1px;font-weight:600}
+.pv{font-family:'SF Mono',Consolas,monospace;font-size:13px;font-weight:600;padding:1px 6px;border-radius:3px;background:var(--bg)}
+.pb{padding:0 12px 10px}
+.panel.anc{border-top:2px solid var(--anc)}.panel.anc .ph{color:var(--anc)}
+.panel.gain{border-top:2px solid var(--gain)}.panel.gain .ph{color:var(--gain)}
+.panel.bat{border-top:2px solid var(--bat)}.panel.bat .ph{color:var(--bat)}
+.m{display:flex;gap:4px}
+.mb{flex:1;padding:7px 4px;border-radius:5px;border:1px solid var(--border);background:var(--bg);color:var(--text2);font-family:inherit;font-size:11px;font-weight:500;cursor:pointer;transition:all .12s;text-align:center;line-height:1.2}
+.mb:hover{border-color:var(--dim);color:var(--text);background:var(--surface2)}
+.mb.a{border-color:currentColor;background:rgba(255,255,255,.03)}
+.panel.anc .mb.a{color:var(--anc);border-color:var(--anc);box-shadow:0 0 8px rgba(43,123,228,.12)}
+.panel.gain .mb.a{color:var(--gain);border-color:var(--gain);box-shadow:0 0 8px rgba(230,138,46,.12)}
+.mb .s{display:block;font-family:'SF Mono',Consolas,monospace;font-size:8px;color:var(--dim);margin-top:1px}
+.ns{margin-top:8px;padding-top:8px;border-top:1px solid var(--border)}
+.ns .mb{font-size:10px;padding:6px 4px}
+.bi{display:flex;align-items:center;gap:5px;padding:2px 0}
+.bl{font-size:10px;color:var(--text2);min-width:2.8em}
+.bb{flex:1;height:6px;background:var(--bg);border-radius:3px;overflow:hidden}
+.bf{display:block;height:100%;border-radius:3px;background:var(--bat);transition:width .25s}
+.bp{font-size:10px;font-family:'SF Mono',Consolas,monospace;color:var(--text2);min-width:2.8em;text-align:right}
+.br{color:var(--text2);cursor:pointer;font-size:11px;padding:0 4px}
+.br:hover{color:var(--text)}
+.tb{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:8px;margin-bottom:8px;flex-wrap:wrap}
+.tl{font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:var(--dim);font-weight:600}
+.sep{width:1px;height:18px;background:var(--border)}
+.pr{padding:3px 8px;border-radius:4px;border:1px solid var(--border);background:var(--bg);color:var(--text2);font-family:inherit;font-size:10px;cursor:pointer}
+.pr:hover{border-color:var(--anc);color:var(--text);background:var(--surface2)}
+.cf{display:inline-flex;align-items:center;gap:3px;flex-shrink:0}
+.cf label{font-size:8px;text-transform:uppercase;letter-spacing:.5px;color:var(--dim)}
+.cf input{width:40px;padding:3px 4px;border-radius:3px;border:1px solid var(--border);background:var(--bg);color:var(--text);font:10px 'SF Mono',Consolas,monospace}
+.cf input.w{width:72px}
+.sb{padding:3px 10px;border-radius:4px;border:1px solid var(--anc);background:rgba(43,123,228,.1);color:var(--anc);font-family:inherit;font-size:10px;font-weight:500;cursor:pointer}
+.sb:hover{background:rgba(43,123,228,.2)}
+.ls{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.lh{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid var(--border)}
+.lh h3{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--dim);font-weight:500}
+.lh .c{font-size:10px;color:var(--dim);font-family:'SF Mono',Consolas,monospace}
+#lg{max-height:320px;overflow-y:auto;font-size:11px;font-family:'SF Mono','Cascadia Code',Consolas,monospace;line-height:1.5;padding:6px 10px}
+.le{margin-bottom:6px;border-radius:5px;background:var(--surface2);border-left:3px solid var(--border);overflow:hidden}
+.le:last-child{margin-bottom:0}
+.le.tx{border-left-color:var(--tx)}.le.rx{border-left-color:var(--rx)}.le.err{border-left-color:var(--err);background:rgba(239,68,68,.04)}
+.lr{display:flex;align-items:baseline;gap:8px;padding:4px 8px}
+.ld{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;min-width:18px}
+.le.tx .ld{color:var(--tx)}.le.rx .ld{color:var(--rx)}.le.err .ld{color:var(--err)}
+.lhx{color:var(--text2);word-break:break-all;font-size:10px}
+.lt{color:var(--dim);font-size:8px;margin-left:auto;white-space:nowrap}
+.ldc{padding:2px 8px 4px 29px;font-size:10px;color:var(--text2)}
+.ldc .f{color:var(--anc);font-weight:600}
+.ldc .i{color:var(--dim)}.ldc .t{color:var(--bat)}.ldc .e{color:var(--err)}
+.em{color:var(--dim);font-size:11px;padding:20px 0;text-align:center}
+button:disabled{opacity:.4;cursor:not-allowed}
+::-webkit-scrollbar{width:3px}
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
-::-webkit-scrollbar-thumb:hover{background:var(--dim)}
-
-/* Disabled state */
-button:disabled{opacity:.4;cursor:not-allowed}
 </style></head><body>
 <div class="app">
+
 <div class="hdr">
-  <div class="hdr-left">
-    <h1>MOONDROP Pudding</h1>
-    <span class="device">Pudding MD-TWS-056</span>
-  </div>
-  <div class="status-badge"><span class="dot" id="st"></span><span id="st-text">连接中...</span></div>
+  <div><h1>MOONDROP Pudding</h1><span class="device">Pudding MD-TWS-056</span></div>
+  <div class="st"><span class="st-d" id="std"></span><span id="stt">连接中...</span></div>
 </div>
 
-<div class="panels">
-  <div class="panel anc">
-    <div class="panel-header">
-      <span class="panel-title">降噪控制</span>
-      <span class="panel-status" id="anc-status">—</span>
+<div class="grid">
+
+<div class="panel anc">
+  <div class="ph"><span>降噪控制</span><span class="pv" id="ancv">—</span></div>
+  <div class="pb">
+    <div class="m" id="anct">
+      <button class="mb" data-v="00"><span>关闭</span><span class="s">0x00</span></button>
+      <button class="mb" data-v="02"><span>通透</span><span class="s">0x02</span></button>
+      <button class="mb" data-v="04" id="nct"><span>降噪</span><span class="s" id="nca">▸</span></button>
     </div>
-    <div class="mode-btns" id="anc-modes">
-      <button class="mode-btn" data-val="00"><span class="label">关闭</span><span class="hex">0x00</span></button>
-      <button class="mode-btn" data-val="02"><span class="label">通透</span><span class="hex">0x02</span></button>
-      <button class="mode-btn" data-val="04"><span class="label">降噪</span><span class="hex">0x04</span></button>
-    </div>
-  </div>
-  <div class="panel gain">
-    <div class="panel-header">
-      <span class="panel-title">增益控制</span>
-      <span class="panel-status" id="gain-status">—</span>
-    </div>
-    <div class="mode-btns" id="gain-modes">
-      <button class="mode-btn" data-val="00"><span class="label">高</span><span class="hex">0x00</span></button>
-      <button class="mode-btn" data-val="01"><span class="label">中</span><span class="hex">0x01</span></button>
-      <button class="mode-btn" data-val="02"><span class="label">低</span><span class="hex">0x02</span></button>
+    <div class="ns" id="ncs" style="display:none">
+      <div class="m">
+        <button class="mb" data-v="01"><span>自适应</span><span class="s">0x01</span></button>
+        <button class="mb" data-v="03"><span>抗风噪</span><span class="s">0x03</span></button>
+      </div>
     </div>
   </div>
 </div>
 
-<div class="tools">
-  <div class="tool-card">
-    <h3>快捷命令</h3>
-    <div class="presets" id="presets"></div>
-  </div>
-  <div class="tool-card">
-    <h3>自定义命令</h3>
-    <div class="custom">
-      <div><label>Feature</label><input id="f" value="40"></div>
-      <div><label>Cmd</label><input id="c" value="03"></div>
-      <div><label>Payload</label><input id="p" class="wide" placeholder="hex"></div>
-      <button class="send-btn" onclick="sendCustom()">发送</button>
+<div class="panel gain">
+  <div class="ph"><span>增益控制</span><span class="pv" id="gnv">—</span></div>
+  <div class="pb">
+    <div class="m" id="gnt">
+      <button class="mb" data-v="00"><span>高</span><span class="s">0x00</span></button>
+      <button class="mb" data-v="01"><span>中</span><span class="s">0x01</span></button>
+      <button class="mb" data-v="02"><span>低</span><span class="s">0x02</span></button>
     </div>
   </div>
 </div>
 
-<div class="log-section">
-  <div class="log-header">
-    <h3>通信日志</h3>
-    <span class="count" id="log-count">0</span>
+<div class="panel bat">
+  <div class="ph"><span>电量</span><span class="br" id="batbtn">↻</span></div>
+  <div class="pb">
+    <div class="bi"><span class="bl">左耳</span><span class="bb"><span class="bf" id="batl" style="width:0%"></span></span><span class="bp" id="batlt">--</span></div>
+    <div class="bi"><span class="bl">右耳</span><span class="bb"><span class="bf" id="batr" style="width:0%"></span></span><span class="bp" id="batrt">--</span></div>
+    <div class="bi"><span class="bl">充电盒</span><span class="bb"><span class="bf" id="batc" style="width:0%"></span></span><span class="bp" id="batct">--</span></div>
   </div>
-  <div id="log"><div class="empty">等待连接...</div></div>
 </div>
+
+</div>
+
+<div class="tb">
+  <span class="tl">快捷</span>
+  <div id="prs" style="display:inline-flex;gap:4px;flex-wrap:wrap"></div>
+  <span class="sep"></span>
+  <div style="display:flex;gap:3px;flex-shrink:0;align-items:center">
+    <div class="cf"><label>F</label><input id="fi" value="40"></div>
+    <div class="cf"><label>C</label><input id="ci" value="03"></div>
+    <div class="cf"><label>Payload</label><input id="pi" class="w" placeholder="hex"></div>
+    <button class="sb" onclick="sc()">发送</button>
+  </div>
+</div>
+
+<div class="ls">
+  <div class="lh"><h3>通信日志</h3><span class="c" id="lgc">0</span></div>
+  <div id="lg"><div class="em">等待连接...</div></div>
+</div>
+
 </div>
 
 <script>
-const log=document.getElementById('log'),st=document.getElementById('st'),stText=document.getElementById('st-text'),logCount=document.getElementById('log-count');
-let logN=0;
+const lg=document.getElementById('lg'),std=document.getElementById('std'),stt=document.getElementById('stt'),lgc=document.getElementById('lgc');let ln=0;
+function al(h,c){if(lg.children===1&&lg.firstElementChild.classList.contains('em'))lg.innerHTML='';const d=document.createElement('div');d.className='le'+(c?' '+c:'');d.innerHTML=h;lg.prepend(d);while(lg.children>50)lg.removeChild(lg.lastChild);ln++;lgc.textContent=ln}
+function mn(m){return{0:'关闭',1:'自适应',2:'通透',3:'抗风噪',4:'降噪'}[m]||('未知(0x'+m.toString(16)+')')}
+function gn(m){return{0:'高',1:'中',2:'低'}[m]||('未知(0x'+m+')')}
+function di(d,s){if(!d)return'';let r='<span class="f">F:0x'+d.feature.toString(16).padStart(2,'0')+'</span> <span class="i">('+d.feature_name+')</span> C:'+d.cmd_hex;if(d.ascii)r+=' <span class="t">→ "'+d.ascii+'"</span>';else if(d.payload.length)r+=' <span class="i">['+d.payload_hex+']</span>';if(s){const t=ps(d);if(t)r+='<br><span class="t">→ '+t+'</span>'}return r}
+function ps(d){const p=d.payload,f=d.feature&0xFE,c=d.cmd;if(!p||!p.length)return'';if(f===0x40&&(c===3||c===4))return'ANC: '+mn(p[0]);if(f===0x1E&&(c===1||c===2))return'增益: '+gn(p[0]);if(f===0x20&&c===5)return'LDAC: '+(p[0]?'启用':'关闭');if(f===0x20&&c===1)return'LC3: '+(p[0]?'启用':'关闭');if(f===0x1A&&c<=1){const n={1:'左耳',2:'右耳',3:'充电盒'};const b=i=>i===0xFF?'无':i+'%';return p.length>=4?'电量: '+n[p[0]]+' '+b(p[1])+' '+n[p[2]]+' '+b(p[3])+(p[4]?' '+n[p[4]]+' '+b(p[5]):''):''}if(f===0x00&&c===0x0D)return'设备状态';if(f===0x00&&c===0x0C)return'配置查询 #'+p[0];if(f===0x00&&c===0x01)return'支持 '+p.length+' 条命令';if(f===0x00&&c===0x07)return'EQ 状态';if(f===0x28&&c===5){const n=d.ascii||'';return n?'连接手机: '+n:'设备信息'}if(f===0x28&&c===3)return'子类型: '+p[0];if(f===0x40&&c===0x29){const a=['关闭','自适应','通透','抗风噪','降噪'];return'可用: '+a.map((n,i)=>(p[i]?n:'无')).join(' ')}return''}
+function lr(d,h,dc,cl){return'<div class="lr"><span class="ld">'+d+'</span><span class="lhx">'+h+'</span><span class="lt">'+new Date().toLocaleTimeString('zh',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'})+'</span></div>'+(dc?'<div class="ldc">'+dc+'</div>':'')}
 
-function addLog(html, cls){
-  if(log.children===1&&log.firstElementChild.classList.contains('empty'))log.innerHTML='';
-  const d=document.createElement('div');d.className='log-entry'+(cls?' '+cls:'');d.innerHTML=html;log.prepend(d);
-  while(log.children>50)log.removeChild(log.lastChild);
-  logN++;logCount.textContent=logN;
-}
-
-function decodeInfo(d){if(!d)return'';let s=`<span class="feat">F:0x${d.feature.toString(16).padStart(2,'0')}</span> <span class="info">(${d.feature_name})</span> `;s+=`C:${d.cmd_hex}`;if(d.ascii)s+=` → "${d.ascii}"`;else if(d.payload.length)s+=` [${d.payload_hex}]`;return s}
-
-function logRow(dir, hex, decode, cls){
-  return `<div class="log-row ${dir}${cls?' '+cls:''}"><span class="log-dir">${dir}</span><span class="log-hex">${hex}</span><span class="log-ts">${new Date().toLocaleTimeString('zh',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'})}</span></div>${decode?`<div class="log-decode">${decode}</div>`:''}`;
-}
-
-function modeName(m){return{0:'关闭',2:'通透',4:'降噪',8:'自适应',16:'抗风噪'}[m]||`未知(0x${m.toString(16)})`}
-
-function updateAncUI(mode){
-  document.getElementById('anc-status').textContent=modeName(mode);
-  document.querySelectorAll('#anc-modes .mode-btn').forEach(b=>b.classList.toggle('active',parseInt(b.dataset.val,16)===mode));
-}
-
-function gainName(m){return{0:'高',1:'中',2:'低'}[m]||`未知(0x${m})`}
-
-function updateGainUI(level){
-  document.getElementById('gain-status').textContent=gainName(level);
-  document.querySelectorAll('#gain-modes .mode-btn').forEach(b=>b.classList.toggle('active',parseInt(b.dataset.val,16)===level));
-}
+function ua(m){const n=m===1||m===3||m===4;document.getElementById('ancv').textContent=mn(m);document.querySelectorAll('#anct .mb').forEach(b=>b.classList.toggle('a',(b.dataset.v==='04'&&n)||parseInt(b.dataset.v,16)===m));const s=document.getElementById('ncs'),a=document.getElementById('nca');if(n){s.style.display='block';a.textContent='▾';document.querySelectorAll('#ncs .mb').forEach(b=>b.classList.toggle('a',parseInt(b.dataset.v,16)===m))}else{s.style.display='none';a.textContent='▸'}}
+function ug(l){document.getElementById('gnv').textContent=gn(l);document.querySelectorAll('#gnt .mb').forEach(b=>b.classList.toggle('a',parseInt(b.dataset.v,16)===l))}
+function ub(b){const m={1:'batl',2:'batr',3:'batc'};b.forEach(b=>{const i=m[b.id];if(!i)return;if(b.level===255){document.getElementById(i).style.width='0%';document.getElementById(i+'t').textContent='无'}else{const p=Math.min(b.level,100);document.getElementById(i).style.width=p+'%';document.getElementById(i+'t').textContent=p+'%'}})}
 
 async function send(f,c,p){
-  document.querySelectorAll('.mode-btn,.preset,.send-btn').forEach(b=>b.disabled=true);
-  st.className='dot';stText.textContent='通信中...';
+  document.querySelectorAll('.mb,.pr,.sb').forEach(b=>b.disabled=true);std.className='st-d';stt.textContent='通信中...';
   try{
-    const r=await fetch(`/api/send?feature=${f}&cmd=${c}&payload=${encodeURIComponent(p||'')}`);
+    const r=await fetch('/api/send?feature='+f+'&cmd='+c+'&payload='+encodeURIComponent(p||''));
     const j=await r.json();
-    if(j.error&&!j.rx_raw){
-      addLog(logRow('ERR',j.tx?j.tx.raw:'',`<span class="err">${j.error}</span>`),'log-err-entry');
-      st.className='dot off';stText.textContent='通信失败'
-    }else{
-      let h=logRow('TX',j.tx?j.tx.raw:'',decodeInfo(j.tx));
-      if(j.decoded){
-        h+=logRow('RX',j.rx_raw,decodeInfo(j.decoded));
-        if(j.decoded.payload.length>0&&(j.decoded.feature&0xFE)===0x40&&(j.decoded.cmd===3||j.decoded.cmd===4)){updateAncUI(j.decoded.payload[0])}
-        if(j.decoded.payload.length>0&&(j.decoded.feature&0xFE)===0x1E&&(j.decoded.cmd===1||j.decoded.cmd===2)){updateGainUI(j.decoded.payload[0])}
-      }else if(j.rx_raw){h+=logRow('RX',j.rx_raw,'')}
-      else{h+=`<div class="log-row err"><span class="log-dir">--</span><span class="log-msg">设备无响应</span></div>`}
-      addLog(h);st.className='dot ok';stText.textContent='已连接';
+    if(j.error&&!j.rx_raw){al(lr('ERR',j.tx?j.tx.raw:'','<span class="e">'+j.error+'</span>'),'err');std.className='st-d off';stt.textContent='通信失败'}
+    else{
+      let h=lr('TX',j.tx?j.tx.raw:'',di(j.tx));
+      if(j.decoded){h+=lr('RX',j.rx_raw,di(j.decoded,true));if(j.decoded.payload.length>0&&(j.decoded.feature&0xFE)===0x40&&(j.decoded.cmd===3||j.decoded.cmd===4))ua(j.decoded.payload[0]);if(j.decoded.payload.length>0&&(j.decoded.feature&0xFE)===0x1E&&(j.decoded.cmd===1||j.decoded.cmd===2))ug(j.decoded.payload[0]);if(j.decoded.battery)ub(j.decoded.battery)}
+      else if(j.rx_raw)h+=lr('RX',j.rx_raw,'');
+      else h+='<div class="lr"><span class="ld" style="color:var(--err)">--</span><span style="color:var(--err);padding:4px 8px">设备无响应</span></div>';
+      al(h);std.className='st-d ok';stt.textContent='已连接';
     }
-  }catch(e){
-    addLog(logRow('ERR','',`<span class="err">请求失败: ${e.message}</span>`),'log-err-entry');
-    st.className='dot off';stText.textContent='连接失败';
-  }
-  await new Promise(r=>setTimeout(r,1200));
-  document.querySelectorAll('.mode-btn,.preset,.send-btn').forEach(b=>b.disabled=false);
+  }catch(e){al(lr('ERR','','<span class="e">请求失败: '+e.message+'</span>'),'err');std.className='st-d off';stt.textContent='连接失败'}
+  await new Promise(r=>setTimeout(r,2000));document.querySelectorAll('.mb,.pr,.sb').forEach(b=>b.disabled=false);
 }
+function sc(){try{send(parseInt(document.getElementById('fi').value,16),parseInt(document.getElementById('ci').value,16),document.getElementById('pi').value)}catch(e){alert('参数错误: '+e.message)}}
 
-function sendCustom(){
-  try{
-    const f=parseInt(document.getElementById('f').value,16);
-    const c=parseInt(document.getElementById('c').value,16);
-    send(f,c,document.getElementById('p').value);
-  }catch(e){alert('参数错误: '+e.message)}
-}
+document.getElementById('anct').addEventListener('click',e=>{const b=e.target.closest('.mb');if(!b)return;const v=parseInt(b.dataset.v,16);if(v===4){const s=document.getElementById('ncs'),a=document.getElementById('nca');const o=s.style.display!=='block';s.style.display=o?'block':'none';a.textContent=o?'▾':'▸';return}send(0x40,0x04,b.dataset.v);ua(v)});
+document.getElementById('ncs').addEventListener('click',e=>{const b=e.target.closest('.mb');if(!b)return;send(0x40,0x04,b.dataset.v);ua(parseInt(b.dataset.v,16))});
+document.getElementById('gnt').addEventListener('click',e=>{const b=e.target.closest('.mb');if(b){send(0x1E,0x02,b.dataset.v);ug(parseInt(b.dataset.v,16))}});
+document.getElementById('batbtn').addEventListener('click',()=>send(0x1A,0x01,'0102'));
 
-document.getElementById('anc-modes').addEventListener('click',e=>{const b=e.target.closest('.mode-btn');if(b){send(0x40,0x04,b.dataset.val);updateAncUI(parseInt(b.dataset.val,16))}});
-document.getElementById('gain-modes').addEventListener('click',e=>{const b=e.target.closest('.mode-btn');if(b){send(0x1E,0x02,b.dataset.val);updateGainUI(parseInt(b.dataset.val,16))}});
+fetch('/api/presets').then(r=>r.json()).then(ps=>{const g=document.getElementById('prs');ps.forEach(p=>{const b=document.createElement('button');b.className='pr';b.textContent=p.name;b.title='F:0x'+p.feature.toString(16).padStart(2,'0')+' C:0x'+p.cmd.toString(16).padStart(2,'0');b.onclick=()=>send(p.feature,p.cmd,p.payload);g.appendChild(b)})}).catch(e=>console.error('加载预设失败:',e));
 
-fetch('/api/presets').then(r=>r.json()).then(ps=>{const g=document.getElementById('presets');ps.forEach(p=>{const b=document.createElement('button');b.className='preset';b.textContent=p.name;b.title=`F:0x${p.feature.toString(16).padStart(2,'0')} C:0x${p.cmd.toString(16).padStart(2,'0')}`;b.onclick=()=>send(p.feature,p.cmd,p.payload);g.appendChild(b)})}).catch(e=>console.error('加载预设失败:',e));
+document.querySelectorAll('.mb,.pr,.sb').forEach(b=>b.disabled=true);
 
-document.querySelectorAll('.mode-btn,.preset,.send-btn').forEach(b=>b.disabled=true);
-
-(async()=>{
-  stText.textContent='探测设备...';
-  const ck=await fetch('/api/check').then(r=>r.json()).catch(()=>({online:false}));
-  if(ck.online){
-    st.className='dot ok';stText.textContent='已连接';
-    await send(0x40,0x03);await send(0x1E,0x01);
-  }else{
-    st.className='dot off';stText.textContent='设备未响应';
-    addLog('<span class="log-ts">'+new Date().toLocaleTimeString('zh',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'})+'</span> <span class="log-err">✗ 设备未响应 — 请确认蓝牙已配对且 SPP 已连接，然后刷新页面重试</span>');
-    document.querySelectorAll('.mode-btn,.preset,.send-btn').forEach(b=>b.disabled=false);
-  }
-})();
+(async()=>{stt.textContent='探测设备...';const ck=await fetch('/api/check').then(r=>r.json()).catch(()=>({online:false}));if(ck.online){std.className='st-d ok';stt.textContent='已连接';await send(0x40,0x03);await send(0x1E,0x01);await send(0x1A,0x01,'0102')}else{std.className='st-d off';stt.textContent='设备未响应';al('<span class="lt">'+new Date().toLocaleTimeString('zh',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'})+'</span> <span class="e">✗ 设备未响应 — 请确认蓝牙已配对且 SPP 已连接，然后刷新页面重试</span>');document.querySelectorAll('.mb,.pr,.sb').forEach(b=>b.disabled=false)}})();
 </script></body></html>"""
 
 device_online=False

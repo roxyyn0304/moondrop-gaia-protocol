@@ -34,10 +34,10 @@ class GaiaCodecTest {
 
     @Test
     fun `encode ANC set`() {
-        val encoded = GaiaCodec.encode(GaiaPacketBuilder.ancSet(AncMode.NOISE_CANCEL))
+        val encoded = GaiaCodec.encode(GaiaPacketBuilder.ancSet(AncMode.ADAPTIVE))
         assertEquals(0x40, encoded[6].toInt() and 0xFF)
         assertEquals(0x04, encoded[7].toInt() and 0xFF)
-        assertEquals(0x04, encoded[8].toInt() and 0xFF) // ANC mode = 0x04
+        assertEquals(0x01, encoded[8].toInt() and 0xFF) // ANC mode = 0x01
     }
 
     @Test
@@ -79,11 +79,19 @@ class GaiaCodecTest {
     }
 
     @Test
-    fun `decode ANC noise cancel`() {
-        val rx = hex(0xFF, 0x04, 0x00, 0x01, 0x00, 0x1D, 0x41, 0x03, 0x04)
+    fun `decode ANC anti-wind`() {
+        val rx = hex(0xFF, 0x04, 0x00, 0x01, 0x00, 0x1D, 0x41, 0x03, 0x03)
         val p = GaiaCodec.decode(rx)
         assertNotNull(p)
-        assertEquals(AncMode.NOISE_CANCEL, ResponseParser.parseAncMode(p))
+        assertEquals(AncMode.ANTI_WIND, ResponseParser.parseAncMode(p))
+    }
+
+    @Test
+    fun `decode ANC adaptive`() {
+        val rx = hex(0xFF, 0x04, 0x00, 0x01, 0x00, 0x1D, 0x41, 0x03, 0x01)
+        val p = GaiaCodec.decode(rx)
+        assertNotNull(p)
+        assertEquals(AncMode.ADAPTIVE, ResponseParser.parseAncMode(p))
     }
 
     @Test
@@ -129,8 +137,14 @@ class GaiaCodecTest {
 
     @Test
     fun `parse anc mode from SET response`() {
-        val p = GaiaPacket(0x41, 0x04, byteArrayOf(0x04, 0x02, 0x00))
-        assertEquals(AncMode.NOISE_CANCEL, ResponseParser.parseAncMode(p))
+        val p = GaiaPacket(0x41, 0x04, byteArrayOf(0x03, 0x02, 0x00))
+        assertEquals(AncMode.ANTI_WIND, ResponseParser.parseAncMode(p))
+    }
+
+    @Test
+    fun `parse anc adaptive from SET response`() {
+        val p = GaiaPacket(0x41, 0x04, byteArrayOf(0x01, 0x02, 0x00))
+        assertEquals(AncMode.ADAPTIVE, ResponseParser.parseAncMode(p))
     }
 
     @Test

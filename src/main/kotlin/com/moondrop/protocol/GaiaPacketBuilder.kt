@@ -45,6 +45,7 @@ object GaiaPacketBuilder {
 
     fun ldacStatusQuery(): GaiaPacket = GaiaPacket(GaiaConstants.FEATURE_CODEC, GaiaConstants.CMD_LDAC_STATUS)
     fun lc3StatusQuery(): GaiaPacket = GaiaPacket(GaiaConstants.FEATURE_CODEC, GaiaConstants.CMD_LC3_STATUS)
+    fun codecSet(codecId: Byte, value: Byte): GaiaPacket = GaiaPacket(GaiaConstants.FEATURE_CODEC, GaiaConstants.CMD_CODEC_SET, byteArrayOf(codecId, value))
 
     // ========== 探测 ==========
 
